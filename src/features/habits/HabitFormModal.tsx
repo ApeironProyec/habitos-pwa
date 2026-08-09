@@ -101,17 +101,18 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
       <div
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-zinc-50 p-5 pb-8 sm:rounded-3xl dark:bg-zinc-900"
+        className="flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-3xl bg-zinc-50 sm:rounded-3xl dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between p-5 pb-0">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{habit ? 'Editar hábito' : 'Nuevo hábito'}</h2>
           <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={save} className="space-y-4">
+        <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 pt-3">
           <div>
             <label className={labelCls}>Nombre *</label>
             <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Beber agua" autoFocus />
@@ -257,15 +258,18 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          </div>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full rounded-xl bg-violet-700 py-3 text-[15px] font-semibold text-white shadow-lg shadow-violet-700/25 transition active:scale-[0.98] disabled:opacity-60"
-          >
-            {saving ? 'Guardando…' : habit ? 'Guardar cambios' : 'Crear hábito'}
-          </button>
+          <div className="border-t border-zinc-200 p-5 dark:border-zinc-800">
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full rounded-xl bg-violet-700 py-3 text-[15px] font-semibold text-white shadow-lg shadow-violet-700/25 transition active:scale-[0.98] disabled:opacity-60"
+            >
+              {saving ? 'Guardando…' : habit ? 'Guardar cambios' : 'Crear hábito'}
+            </button>
+          </div>
         </form>
       </div>
     </div>

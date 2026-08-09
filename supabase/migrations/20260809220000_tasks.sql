@@ -13,7 +13,7 @@ create table if not exists public.tasks (
   due_time time,
   estimated_minutes integer,
   spent_minutes integer not null default 0,
-  sort_order integer not null default 0,
+  sort_order bigint not null default 0,
   completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
