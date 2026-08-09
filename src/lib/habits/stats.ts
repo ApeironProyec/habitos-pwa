@@ -4,7 +4,7 @@ import { appliesOn, scheduledTimesForDate } from './frequency'
 /** Subconjunto de Habit que necesitan los cálculos. */
 export type HabitLite = Pick<
   Habit,
-  'id' | 'name' | 'icon' | 'frequency_type' | 'frequency_config' | 'start_date' | 'end_date'
+  'id' | 'name' | 'icon' | 'color' | 'frequency_type' | 'frequency_config' | 'start_date' | 'end_date'
 >
 
 /** Ocurrencias esperadas (scheduled) para un hábito en un rango de fechas [from, to] (YYYY-MM-DD, local). */

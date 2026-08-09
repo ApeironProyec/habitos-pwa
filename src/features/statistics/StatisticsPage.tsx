@@ -1,53 +1,60 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Flame, TrendingUp, Activity } from 'lucide-react'
 import { useHabits } from '@/features/habits/useHabits'
 import { fetchOccurrences } from '@/lib/habits/occurrences'
-import { todayStr, dateInTimezone } from '@/lib/habits/frequency'
+import { todayStr, shiftDate } from '@/lib/habits/frequency'
 import { completionRate, currentStreak, bestStreak, dailyTotals, perHabitStats } from '@/lib/habits/stats'
 import type { Occurrence } from '@/lib/habits/types'
 import { cn } from '@/lib/utils'
 
+type StatsData = {
+  days: Record<string, { expected: number; done: number }>
+  pct: number | null
+  streak: number
+  best: number
+  perHabit: ReturnType<typeof perHabitStats>
+}
+
 export default function StatisticsPage() {
   const { habits, loading: habitsLoading } = useHabits()
-  const [range, setRange] = useState<'week' | 'month'>('week')
-  const [data, setData] = useState<{ days: Map<string, { expected: number; done: number }>; pct: number | null; streak: number; best: number; perHabit: ReturnType<typeof perHabitStats> } | null>(null)
+  const [range, setRange] = useState<'week' | 'month'>('month')
+  const [data, setData] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const today = useMemo(() => todayStr(), [])
-  const profile = useAuthProfile()
 
-  useMemo(() => {
-    if (habitsLoading || habits.length === 0) {
-      setData(null)
-      return
-    }
+  useEffect(() => {
+    if (habitsLoading) return
     let cancelled = false
     setLoading(true)
     ;(async () => {
       try {
         const to = today
         const from = shiftDate(today, range === 'week' ? -6 : -29)
+        const active = habits.filter((h) => h.is_active)
         const occs = await fetchOccurrences(
-          habits.map((h) => h.id),
+          active.map((h) => h.id),
           from,
           to
         )
+        if (cancelled) return
         const byHabit = new Map<string, Occurrence[]>()
         for (const o of occs) {
-          const list = byHabit.get(o.habit_id) ?? []
-          list.push(o)
-          byHabit.set(o.habit_id, list)
+          const arr = byHabit.get(o.habit_id) ?? []
+          arr.push(o)
+          byHabit.set(o.habit_id, arr)
         }
-        const active = habits.filter((h) => h.is_active)
-        const days = dailyTotals(active, byHabit, from, to)
-        const pct = completionRate(active, byHabit, from, to)
-        const streak = currentStreak(active, byHabit, today)
-        const best = bestStreak(active, byHabit, today)
-        const perHabit = perHabitStats(active, byHabit, from, to)
-        if (!cancelled) setData({ days, pct, streak, best, perHabit })
-        setError(null)
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error calculando estadísticas')
+        const daysObj: Record<string, { expected: number; done: number }> = {}
+        for (const [k, v] of dailyTotals(active, byHabit, from, to)) daysObj[k] = v
+        setData({
+          days: daysObj,
+          pct: completionRate(active, byHabit, from, to),
+          streak: currentStreak(active, byHabit, to),
+          best: bestStreak(active, byHabit, to),
+          perHabit: perHabitStats(active, byHabit, from, to),
+        })
+      } catch {
+        /* estadísticas no bloquean la app */
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -55,121 +62,125 @@ export default function StatisticsPage() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [habits, habitsLoading, range, today, profile])
+  }, [habits, habitsLoading, range, today])
 
-  const dayLabels = useMemo(() => {
-    if (!data) return []
-    return [...data.days.entries()]
-  }, [data])
+  if (habitsLoading || loading || !data) {
+    return <div className="pt-16 text-center text-sm text-[var(--text-secondary)]">Calculando…</div>
+  }
 
-  if (habitsLoading || loading) return <div className="pt-16 text-center text-sm text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Calculando…</div>
+  const labels = Object.keys(data.days)
+  const dates = labels.map((d) => Number(d.slice(8, 10)))
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-6">
       <header>
-        <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 dark:text-zinc-100">Estadísticas</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Tu constancia en números</p>
+        <h1 className="text-[28px] font-bold tracking-tight text-[var(--text-primary)]">Estadísticas</h1>
+        <p className="text-sm text-[var(--text-secondary)]">Tu constancia en números</p>
       </header>
 
-      <div className="grid grid-cols-2 rounded-xl bg-zinc-200/70 dark:bg-zinc-800/70 p-1 text-sm font-medium">
+      {/* Selector Semana/Mes */}
+      <div className="flex w-fit rounded-full bg-black/5 p-1 backdrop-blur dark:bg-white/10">
         {(['week', 'month'] as const).map((r) => (
           <button
             key={r}
             onClick={() => setRange(r)}
-            className={cn('rounded-lg py-2 capitalize transition', range === r ? 'bg-white shadow-sm dark:bg-zinc-900 dark:ring-zinc-800 text-zinc-900' : 'text-zinc-500')}
+            className={cn(
+              'rounded-full px-5 py-1.5 text-sm font-medium transition-all tap',
+              range === r
+                ? 'bg-white text-zinc-900 shadow-sm dark:bg-white dark:text-black'
+                : 'text-[var(--text-secondary)]'
+            )}
           >
             {r === 'week' ? 'Semana' : 'Mes'}
           </button>
         ))}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {/* Grid métricas 2x2 */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="glass fade-up p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Cumplimiento</p>
+          <p className="mt-1.5 text-3xl font-bold tabular-nums text-[var(--text-primary)]">{data.pct}%</p>
+        </div>
+        <div className="glass fade-up p-4" style={{ animationDelay: '40ms' }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Racha actual</p>
+          <p className="mt-1.5 flex items-center gap-1.5 text-3xl font-bold tabular-nums text-violet-600 dark:text-violet-400">
+            <Flame className="h-6 w-6 text-orange-500" /> {data.streak}
+          </p>
+          <p className="text-xs text-[var(--text-secondary)]">días</p>
+        </div>
+        <div className="glass fade-up p-4" style={{ animationDelay: '80ms' }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Mejor racha</p>
+          <p className="mt-1.5 text-3xl font-bold tabular-nums text-[var(--text-primary)]">{data.best}</p>
+          <p className="text-xs text-[var(--text-secondary)]">días</p>
+        </div>
+        <div className="glass fade-up p-4" style={{ animationDelay: '120ms' }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Hábitos activos</p>
+          <p className="mt-1.5 text-3xl font-bold tabular-nums text-[var(--text-primary)]">{habits.filter((h) => h.is_active).length}</p>
+        </div>
+      </div>
 
-      {data && (
-        <>
-          {/* Tarjetas resumen */}
-          <section className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800">
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Cumplimiento</p>
-              <p className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-100 dark:text-zinc-100">{data.pct ?? 0}%</p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800">
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Racha actual</p>
-              <p className="mt-1 text-3xl font-bold text-violet-700">🔥 {data.streak} días</p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800">
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Mejor racha</p>
-              <p className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-100 dark:text-zinc-100">{data.best} días</p>
-            </div>
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800">
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Hábitos activos</p>
-              <p className="mt-1 text-3xl font-bold text-zinc-900 dark:text-zinc-100 dark:text-zinc-100">{habits.filter((h) => h.is_active).length}</p>
-            </div>
-          </section>
+      {/* Evolución diaria */}
+      <section className="glass fade-up p-4" style={{ animationDelay: '160ms' }}>
+        <h2 className="mb-3 flex items-center gap-2 text-[15px] font-semibold text-[var(--text-primary)]">
+          <Activity className="h-4 w-4 text-violet-500" /> Evolución diaria
+        </h2>
+        <div className="flex h-28 items-end justify-between gap-1.5">
+          {labels.map((d, i) => {
+            const day = data.days[d]
+            const h = day.expected === 0 ? 2 : Math.max(8, Math.round((day.done / day.expected) * 100))
+            const full = day.expected > 0 && day.done >= day.expected
+            return (
+              <div key={d} className="flex flex-1 flex-col items-center gap-1.5">
+                <div className="flex h-24 w-full items-end">
+                  <div
+                    className={cn(
+                      'w-full rounded-md transition-all duration-500',
+                      full ? 'bg-emerald-500/90' : h <= 2 ? 'bg-[var(--text-secondary)]/20' : 'bg-violet-500/80'
+                    )}
+                    style={{ height: `${h}%` }}
+                  />
+                </div>
+                <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">{dates[i]}</span>
+              </div>
+            )
+          })}
+        </div>
+      </section>
 
-          {/* Gráfico de barras por día */}
-          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800">
-            <p className="mb-3 text-sm font-semibold text-zinc-700">Evolución diaria</p>
-            <div className="flex h-32 items-end gap-1">
-              {dayLabels.map(([d, { expected, done }]) => {
-                const pct = expected === 0 ? 0 : (done / expected) * 100
-                return (
-                  <div key={d} className="flex flex-1 flex-col items-center gap-1">
-                    <div className="flex h-24 w-full items-end overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-800">
-                      <div
-                        className={cn('w-full rounded-md transition-all duration-500', pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-violet-500' : 'bg-zinc-200')}
-                        style={{ height: `${Math.max(pct, 3)}%` }}
-                      />
-                    </div>
-                    <span className="text-[9px] font-medium text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">{d.slice(8, 10)}</span>
-                  </div>
-                )
-              })}
+      {/* Por hábito */}
+      <section className="glass fade-up space-y-3 p-4" style={{ animationDelay: '200ms' }}>
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-[var(--text-primary)]">
+          <TrendingUp className="h-4 w-4 text-violet-500" /> Por hábito
+        </h2>
+        {data.perHabit.length === 0 && (
+          <p className="py-2 text-sm text-[var(--text-secondary)]">Sin hábitos activos en este período.</p>
+        )}
+        {data.perHabit.map(({ habit, expected, done, pct }) => (
+          <div key={habit.id} className="flex items-center gap-3 py-1">
+            <span
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg"
+              style={{ backgroundColor: (habit.color ?? '#2d2a3d') + '55' }}
+            >
+              {habit.icon ?? '🎯'}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <p className="truncate text-[15px] font-medium text-[var(--text-primary)]">{habit.name}</p>
+                <p className="shrink-0 text-xs tabular-nums text-[var(--text-secondary)]">
+                  {done}/{expected} · <span className={cn('font-semibold', pct === 0 ? 'text-red-500' : 'text-emerald-500')}>{pct}%</span>
+                </p>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                <div
+                  className={cn('h-full rounded-full transition-all duration-500', pct === 0 ? 'bg-red-500/80' : 'bg-violet-500')}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
             </div>
-          </section>
-
-          {/* Por hábito */}
-          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800">
-            <p className="mb-3 text-sm font-semibold text-zinc-700">Por hábito</p>
-            {data.perHabit.length === 0 ? (
-              <p className="text-sm text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Sin hábitos activos en este período.</p>
-            ) : (
-              <ul className="space-y-3">
-                {data.perHabit.map(({ habit, done, expected, pct }) => (
-                  <li key={habit.id}>
-                    <div className="mb-1 flex items-center justify-between text-sm">
-                      <span className="font-medium text-zinc-700">
-                        {habit.icon ?? '🎯'} {habit.name}
-                      </span>
-                      <span className="text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">
-                        {done}/{expected} · <b className={cn(pct >= 80 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-red-500')}>{pct}%</b>
-                      </span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                      <div
-                        className={cn('h-full rounded-full', pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-400')}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </>
-      )}
+          </div>
+        ))}
+      </section>
     </div>
   )
-}
-
-function shiftDate(dateStr: string, days: number): string {
-  const d = new Date(dateStr + 'T12:00:00')
-  d.setDate(d.getDate() + days)
-  return dateInTimezone(d)
-}
-
-function useAuthProfile() {
-  // Fuerza recálculo si cambia el usuario; perfil simple
-  return null
 }

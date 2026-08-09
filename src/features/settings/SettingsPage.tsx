@@ -39,7 +39,7 @@ export default function SettingsPage() {
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Cuenta y preferencias</p>
       </header>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:ring-zinc-800">
+      <section className="glass p-4 dark:bg-zinc-900 dark:ring-zinc-800">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 text-lg font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-400">
             {(user?.email ?? '?')[0].toUpperCase()}
@@ -53,7 +53,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:ring-zinc-800">
+      <section className="glass p-4 dark:bg-zinc-900 dark:ring-zinc-800">
         <p className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">Apariencia</p>
         <div className="grid grid-cols-3 gap-2">
           {options.map(({ value, label, icon: Icon }) => (
@@ -74,7 +74,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="space-y-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:ring-zinc-800">
+      <section className="space-y-2 glass p-4 dark:bg-zinc-900 dark:ring-zinc-800">
         <button
           onClick={sendReset}
           className="w-full rounded-xl border border-zinc-200 px-4 py-3 text-left text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"

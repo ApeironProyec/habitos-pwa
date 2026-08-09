@@ -92,6 +92,13 @@ export function localDateToISO(date: string, time: string): string {
 /** Zona horaria del usuario (desde perfil o default). */
 export const DEFAULT_TIMEZONE = 'America/La_Paz'
 
+/** Desplaza una fecha YYYY-MM-DD por N días (negativo = hacia atrás). */
+export function shiftDate(date: string, days: number): string {
+  const d = new Date(date + 'T12:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 /** 'Hoy' en YYYY-MM-DD según zona horaria dada (o local del navegador). */
 export function todayStr(timezone?: string): string {
   return dateInTimezone(new Date(), timezone)

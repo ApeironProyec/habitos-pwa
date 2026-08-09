@@ -60,7 +60,7 @@ export default function HabitsPage() {
             <li
               key={h.id}
               className={cn(
-                'flex items-center gap-3 rounded-2xl bg-white p-3.5 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800 transition',
+                'flex items-center gap-3 rounded-2xl glass p-3.5 transition',
                 !h.is_active && 'opacity-55'
               )}
             >

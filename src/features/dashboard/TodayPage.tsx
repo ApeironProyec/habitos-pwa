@@ -51,7 +51,7 @@ export default function TodayPage() {
       </header>
 
       {/* Progreso del día */}
-      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:ring-zinc-800">
+      <section className="glass p-4 dark:bg-zinc-900 dark:ring-zinc-800">
         <div className="mb-2 flex items-end justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Progreso de hoy</p>
@@ -89,7 +89,7 @@ export default function TodayPage() {
         )}
 
         {grouped.map(({ habit, occs, done, total, pct }) => (
-          <article key={habit.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:ring-zinc-800">
+          <article key={habit.id} className="glass p-4 dark:bg-zinc-900 dark:ring-zinc-800">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <span
