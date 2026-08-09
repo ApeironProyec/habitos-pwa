@@ -37,8 +37,8 @@ export default function HabitsPage() {
     <div className="space-y-4">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Hábitos</h1>
-          <p className="text-sm text-zinc-500">{habits.length} definidos</p>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 dark:text-zinc-100">Hábitos</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{habits.length} definidos</p>
         </div>
         <button
           onClick={() => { setEditing(null); setModalOpen(true) }}
@@ -49,9 +49,9 @@ export default function HabitsPage() {
       </header>
 
       {loading ? (
-        <p className="pt-10 text-center text-sm text-zinc-400">Cargando…</p>
+        <p className="pt-10 text-center text-sm text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">Cargando…</p>
       ) : habits.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
+        <div className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
           Sin hábitos todavía. Crea el primero con el botón «Nuevo».
         </div>
       ) : (
@@ -60,7 +60,7 @@ export default function HabitsPage() {
             <li
               key={h.id}
               className={cn(
-                'flex items-center gap-3 rounded-2xl bg-white p-3.5 shadow-sm ring-1 ring-zinc-100 transition',
+                'flex items-center gap-3 rounded-2xl bg-white p-3.5 shadow-sm ring-1 ring-zinc-100 dark:ring-zinc-800 transition',
                 !h.is_active && 'opacity-55'
               )}
             >
@@ -71,15 +71,15 @@ export default function HabitsPage() {
                 {h.icon ?? '🎯'}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold text-zinc-900">{h.name}</p>
-                <p className="truncate text-xs text-zinc-400">
+                <p className="truncate font-semibold text-zinc-900 dark:text-zinc-100 dark:text-zinc-100">{h.name}</p>
+                <p className="truncate text-xs text-zinc-400 dark:text-zinc-500 dark:text-zinc-400">
                   {freqLabel(h)} · {h.is_active ? 'activo' : 'pausado'}
                 </p>
               </div>
               <div className="flex shrink-0 gap-1">
                 <button
                   onClick={() => { setEditing(h); setModalOpen(true) }}
-                  className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+                  className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 dark:bg-zinc-800 hover:text-zinc-700"
                   title="Editar"
                 >
                   <Pencil className="h-4 w-4" />
@@ -87,7 +87,7 @@ export default function HabitsPage() {
                 <button
                   onClick={() => toggleActive(h)}
                   disabled={busyId === h.id}
-                  className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-violet-700 disabled:opacity-50"
+                  className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 dark:bg-zinc-800 hover:text-violet-700 disabled:opacity-50"
                   title={h.is_active ? 'Pausar' : 'Reactivar'}
                 >
                   {h.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}

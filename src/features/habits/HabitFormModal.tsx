@@ -68,7 +68,11 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
       }
       onSaved()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar')
+      console.error('Error guardando hábito:', err)
+      const msg = err instanceof Error ? err.message : 'No se pudo guardar'
+      // extraer mensaje del error de Supabase (PostgrestError)
+      const detail = typeof err === 'object' && err !== null && 'details' in err ? String((err as { details?: unknown }).details ?? '') : ''
+      setError(detail ? `${msg} — ${detail}` : msg)
     } finally {
       setSaving(false)
     }
@@ -91,18 +95,18 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
   }
 
   const inputCls =
-    'w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-[15px] outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200'
+    'w-full rounded-xl border border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-800 px-3.5 py-2.5 text-[15px] outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200'
   const labelCls = 'mb-1.5 block text-sm font-medium text-zinc-700'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
       <div
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-zinc-50 p-5 pb-8 sm:rounded-3xl"
+        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-zinc-50 p-5 pb-8 sm:rounded-3xl dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-zinc-900">{habit ? 'Editar hábito' : 'Nuevo hábito'}</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200">
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{habit ? 'Editar hábito' : 'Nuevo hábito'}</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -137,7 +141,7 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
                     'rounded-xl border px-3 py-2.5 text-sm font-medium transition',
                     frequencyType === type
                       ? 'border-violet-600 bg-violet-50 text-violet-800'
-                      : 'border-zinc-300 bg-white text-zinc-600'
+                      : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-800 text-zinc-600'
                   )}
                 >
                   {label}
@@ -157,7 +161,7 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
                     onClick={() => setTimesPerDay(n)}
                     className={cn(
                       'h-11 flex-1 rounded-xl border text-sm font-semibold transition',
-                      timesPerDay === n ? 'border-violet-600 bg-violet-50 text-violet-800' : 'border-zinc-300 bg-white text-zinc-600'
+                      timesPerDay === n ? 'border-violet-600 bg-violet-50 text-violet-800' : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-800 text-zinc-600'
                     )}
                   >
                     {n}
@@ -178,7 +182,7 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
                     onClick={() => setIntervalHours(n)}
                     className={cn(
                       'h-11 flex-1 rounded-xl border text-sm font-semibold transition',
-                      intervalHours === n ? 'border-violet-600 bg-violet-50 text-violet-800' : 'border-zinc-300 bg-white text-zinc-600'
+                      intervalHours === n ? 'border-violet-600 bg-violet-50 text-violet-800' : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-800 text-zinc-600'
                     )}
                   >
                     {n}h
@@ -201,7 +205,7 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
                     }
                     className={cn(
                       'h-10 w-10 rounded-full border text-sm font-semibold transition',
-                      daysOfWeek.includes(i) ? 'border-violet-600 bg-violet-600 text-white' : 'border-zinc-300 bg-white text-zinc-500'
+                      daysOfWeek.includes(i) ? 'border-violet-600 bg-violet-600 text-white' : 'border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-800 text-zinc-500'
                     )}
                   >
                     {d}
@@ -245,7 +249,7 @@ export default function HabitFormModal({ habit, onClose, onSaved }: Props) {
                   key={i}
                   type="button"
                   onClick={() => setIcon(i)}
-                  className={cn('flex h-9 w-9 items-center justify-center rounded-xl text-lg transition', icon === i ? 'bg-violet-100 ring-2 ring-violet-500' : 'bg-white ring-1 ring-zinc-200')}
+                  className={cn('flex h-9 w-9 items-center justify-center rounded-xl text-lg transition', icon === i ? 'bg-violet-100 ring-2 ring-violet-500' : 'bg-white ring-1 ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700')}
                 >
                   {i}
                 </button>

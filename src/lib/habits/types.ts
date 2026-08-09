@@ -51,6 +51,29 @@ export interface Occurrence {
   updated_at: string
 }
 
+export type TaskStatus = 'pending' | 'in_progress' | 'completed'
+
+export interface Task {
+  id: string
+  user_id: string
+  title: string
+  description: string | null
+  status: TaskStatus
+  due_date: string | null
+  due_time: string | null
+  estimated_minutes: number | null
+  spent_minutes: number
+  sort_order: number
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TaskInput = Pick<
+  Task,
+  'title' | 'description' | 'status' | 'due_date' | 'due_time' | 'estimated_minutes'
+> & { spent_minutes?: number }
+
 export type HabitInput = Omit<
   Pick<
     Habit,
