@@ -347,3 +347,66 @@ servidor confirma priority/tags/due_date/due_time subidos. QA2 borrado completo 
 
 ---
 
+
+## 11. ✅ TÍTULO INTELIGENTE + RECORDATORIO UNIFICADO (27-ago noche) — commit 683ae27, EN PROD
+
+### Parser natural (`src/lib/tasks/parse.ts`)
+- Extrae de texto libre: `#tags`, `prioridad:alta|media|baja` (también `prioridad alta` y atajo `!alta`),
+  fechas palabra (`hoy`, `mañana`, `pasado mañana`, días de semana con/sin tilde, "el lunes"),
+  horas 12h (`4pm`, `10:30am`) y 24h (`16:00`), y combos con dos puntos (`mañana:4pm`, `hoy:21:30`).
+- REGLA CLAVE (pedida por Erick): solo hora sin fecha = HOY; si esa hora ya pasó = MAÑANA.
+  Con fecha explícita no aplica el ajuste ("Entregar mañana 9:00" → mañana 9:00 aunque sea de noche).
+- Devuelve título limpio + campos; lo no mencionado queda null (caller aplica defaults).
+- TESTS: 20 casos nuevos incluyendo los 4 ejemplos literales de Erick como contratos.
+
+### UI
+- Barra rápida: **preview en vivo** debajo del input mostrando cómo se interpretó
+  (`✨ Comer comida — mañana · a las 16:00 · alta · #comida`).
+- Botón "Detallada": hereda el texto escrito (`seedText`) y pre-llena TODOS los campos parseados
+  para que ajuste lo demás.
+- Placeholder orientativo: `Ej: Comer mañana:4pm !alta #comida`.
+
+### Recordatorio unificado (decisión de diseño de Erick)
+- "Definir para cuándo Y recordatorio es ilógico" → UN solo concepto:
+  `reminder_date/time := due_date/due_time`. Campo aparte eliminado del modal.
+- Los rows muestran 🔔 sincronizado con la fecha objetivo. Valores viejos se normalizan al editar.
+
+### Bug reportado "no hay botón al editar"
+- Flujo reproducido completo en QA navegador real: modal abre con título cargado → cambiar prioridad
+  Baja → click Guardar → cierra + aplica + servidor refleja el cambio. NO se reprodujo el fallo;
+  probablemente era del bundle anterior o una carrera ya corregida. Pendiente confirmación de Erick
+  si reaparece.
+
+### Lecciones
+- El preview-server sirve el ÚLTIMO BUILD de dist/: si parcheas código y no reconstruyes,
+  el navegador cargará bundles viejos aunque el SW esté limpio. Reconstruir SIEMPRE antes de QA.
+- Para tests con fechas: fijar el reloj con fecha-hora COMPLETA (mi test usaba un día que creía
+  miércoles y era jueves, invirtiendo expectativas de 'mañana' y días de semana).
+
+---
+
+## 12. ⬜ BACKLOG ACTUALIZADO (roadmap vivo)
+
+Prioridad ALTA (siguiente sesión):
+1. **NOTIFICACIONES** — el hueco de producto #1. Base lista: reminder_date/time locales +
+   habits.timezone + slotToDate(). Camino: Web Push VAPID vía Edge Function programada
+   (pg_cron + net.http) o notificaciones locales SW. Sin esto la app es registro, no asistente.
+2. Gestión visual de LISTAS (crear/renombrar/color/borrar desde UI — hoy solo se eligen, no se crean).
+3. Confirmación del bug de edición si reaparece (ver §11).
+
+Media:
+4. Realtime multi-dispositivo (canal Supabase) — hoy pull on visible/online/60s/debounce.
+5. Recurrencia en tareas (diaria/semanal, estilo hábitos).
+6. Vista calendario mensual / navegación por día (el heatmap de stats ya existe).
+7. Archivo/histórico de completadas con búsqueda por tag/texto/fecha.
+
+Baja / pulido:
+8. Onboarding primera vez (sample data opcional).
+9. Export/import JSON — alineado con offline-first.
+10. Deep-links (?quick=... para prellenar la barra rápida desde shortcuts/widget).
+
+**Estado final de calidad acumulada:** tsc 0 · oxlint 0 · **73/73 tests** · build ok.
+Commits del día: `89a0770` refactor offline → `ff3a124` docs → `765b31e` tareas 2.0 →
+`dc2713d` docs → `683ae27` parser inteligente. Cada deploy verificado con bundle nuevo en prod.
+
+*Bitácora cerrada al 27-ago noche. La app pasó de prototipo frágil a producto offline-first real.*
