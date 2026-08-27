@@ -24,12 +24,13 @@ import {
   type OutboxEntry,
 } from './outbox'
 import { emitDataChanged, setSyncState } from './events'
-import type { Habit, Occurrence, Task } from '@/lib/habits/types'
+import type { Habit, Occurrence, Task, TaskList } from '@/lib/habits/types'
 
 const CURSOR_KEY = {
   habits: 'cursor:habits',
   habit_occurrences: 'cursor:habit_occurrences',
   tasks: 'cursor:tasks',
+  task_lists: 'cursor:task_lists',
 } as const
 
 /** Fecha muy anterior a cualquier dato: primer pull trae todo. */
@@ -188,10 +189,11 @@ async function pushEntry(entry: OutboxEntry): Promise<void> {
 // ============================================================
 
 async function pullChanges(userId: string): Promise<void> {
-  const [habits, occurrences, tasks] = await Promise.all([
+  const [habits, occurrences, tasks, taskLists] = await Promise.all([
     pullTable<Habit>('habits', userId),
     pullTable<Occurrence>('habit_occurrences', userId),
     pullTable<Task>('tasks', userId),
+    pullTable<TaskList>('task_lists', userId),
   ])
 
   if (habits.length) {
@@ -205,6 +207,10 @@ async function pullChanges(userId: string): Promise<void> {
   if (tasks.length) {
     await mergeRows(STORE.tasks, tasks)
     emitDataChanged('tasks')
+  }
+  if (taskLists.length) {
+    await mergeRows(STORE.taskLists, taskLists)
+    emitDataChanged('taskLists')
   }
 }
 
@@ -249,7 +255,7 @@ async function pullTable<T extends { id: string; updated_at: string }>(
  * servidor. En cualquier otro caso manda el servidor.
  */
 async function mergeRows<T extends { id: string; updated_at: string }>(
-  store: typeof STORE.habits | typeof STORE.occurrences | typeof STORE.tasks,
+  store: typeof STORE.habits | typeof STORE.occurrences | typeof STORE.tasks | typeof STORE.taskLists,
   remote: T[]
 ): Promise<void> {
   const toWrite: T[] = []
@@ -264,8 +270,18 @@ async function mergeRows<T extends { id: string; updated_at: string }>(
   if (toWrite.length) await idbPutMany(store, toWrite)
 }
 
-/** Postgres devuelve `time` como 'HH:mm:ss'; garantizamos el formato. */
+/** Postgres devuelve `time` como 'HH:mm:ss'; garantizamos el formato en todos los casos. */
 function normalizeRow<T extends Record<string, unknown>>(row: T): T {
+  let out = row
+  for (const key of ['scheduled_time', 'reminder_time', 'due_time'] as const) {
+    if (typeof out[key] === 'string') {
+      const parts = (out[key] as string).split(':')
+      out = {
+        ...out,
+        [key]: `${(parts[0] ?? '00').padStart(2, '0')}:${(parts[1] ?? '00').padStart(2, '0')}:${(parts[2] ?? '00').padStart(2, '0')}`,
+      }
+    }
+  }
   if (typeof row.scheduled_time === 'string') {
     const parts = row.scheduled_time.split(':')
     return {
@@ -324,6 +340,7 @@ export async function resetCursors(): Promise<void> {
     metaSet(CURSOR_KEY.habits, EPOCH),
     metaSet(CURSOR_KEY.habit_occurrences, EPOCH),
     metaSet(CURSOR_KEY.tasks, EPOCH),
+    metaSet(CURSOR_KEY.task_lists, EPOCH),
   ])
 }
 

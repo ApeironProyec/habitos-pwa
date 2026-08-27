@@ -60,14 +60,29 @@ export interface Occurrence extends SyncFields {
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed'
 
+/** Prioridad de una tarea. El orden de ejecución la pondera en este sentido. */
+export type TaskPriority = 'low' | 'medium' | 'high'
+
+export const TASK_PRIORITIES: TaskPriority[] = ['high', 'medium', 'low']
+
 export interface Task extends SyncFields {
   id: string
   user_id: string
   title: string
   description: string | null
   status: TaskStatus
+  /** Fecha objetivo de la tarea ('YYYY-MM-DD', local). */
   due_date: string | null
   due_time: string | null
+  /** Prioridad. Default medium para filas viejas y nuevas sin elegir. */
+  priority: TaskPriority
+  /** Etiquetas libres, en minúsculas. */
+  tags: string[]
+  /** Lista a la que pertenece (FK lógica a task_lists). */
+  list_id: string | null
+  /** Recordatorio: fecha local + hora local (igual que ocurrencias). */
+  reminder_date: string | null
+  reminder_time: string | null
   estimated_minutes: number | null
   spent_minutes: number
   sort_order: number
@@ -76,8 +91,28 @@ export interface Task extends SyncFields {
 
 export type TaskInput = Pick<
   Task,
-  'title' | 'description' | 'status' | 'due_date' | 'due_time' | 'estimated_minutes'
-> & { spent_minutes?: number }
+  | 'title'
+  | 'description'
+  | 'status'
+  | 'due_date'
+  | 'due_time'
+  | 'priority'
+  | 'tags'
+  | 'list_id'
+  | 'reminder_date'
+  | 'reminder_time'
+  | 'estimated_minutes'
+>
+
+export interface TaskList extends SyncFields {
+  id: string
+  user_id: string
+  name: string
+  color: string | null
+  sort_order: number
+}
+
+export type TaskListInput = Pick<TaskList, 'name' | 'color'>
 
 export type HabitInput = Pick<
   Habit,

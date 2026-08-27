@@ -154,6 +154,39 @@ export type Database = {
         }
         Relationships: []
       }
+      task_lists: {
+        Row: {
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tasks: {
         Row: {
           completed_at: string | null
@@ -164,9 +197,14 @@ export type Database = {
           due_time: string | null
           estimated_minutes: number | null
           id: string
+          list_id: string | null
+          priority: string
+          reminder_date: string | null
+          reminder_time: string | null
           sort_order: number
           spent_minutes: number
           status: string
+          tags: string[]
           title: string
           updated_at: string
           user_id: string
@@ -180,9 +218,14 @@ export type Database = {
           due_time?: string | null
           estimated_minutes?: number | null
           id?: string
+          list_id?: string | null
+          priority?: string
+          reminder_date?: string | null
+          reminder_time?: string | null
           sort_order?: number
           spent_minutes?: number
           status?: string
+          tags?: string[]
           title: string
           updated_at?: string
           user_id: string
@@ -196,14 +239,27 @@ export type Database = {
           due_time?: string | null
           estimated_minutes?: number | null
           id?: string
+          list_id?: string | null
+          priority?: string
+          reminder_date?: string | null
+          reminder_time?: string | null
           sort_order?: number
           spent_minutes?: number
           status?: string
+          tags?: string[]
           title?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tasks_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "task_lists"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

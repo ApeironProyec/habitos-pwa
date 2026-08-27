@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
 import { onDataChanged } from '@/lib/db/events'
 import * as repo from '@/lib/db/repo'
-import type { Task, TaskInput } from '@/lib/habits/types'
+import type { Task, TaskInput, TaskList, TaskListInput } from '@/lib/habits/types'
 
 export function useTasks() {
   const { user } = useAuth()
@@ -54,4 +54,29 @@ export function useTasks() {
   }, [])
 
   return { tasks, loading, error, reload, create, update, remove, setStatus, addSpentMinutes }
+}
+
+export function useTaskLists() {
+  const { user } = useAuth()
+  const userId = user?.id ?? ''
+  const [lists, setLists] = useState<TaskList[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const reload = useCallback(async () => {
+    setLists(await repo.listTaskLists())
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void reload()
+    return onDataChanged((scope) => {
+      if (scope === 'taskLists') void reload()
+    })
+  }, [reload])
+
+  const create = useCallback((input: TaskListInput) => repo.createTaskList(input, userId), [userId])
+  const rename = useCallback((id: string, name: string) => repo.renameTaskList(id, name), [])
+  const remove = useCallback((id: string) => repo.deleteTaskList(id), [])
+
+  return { lists, loading, create, rename, remove }
 }

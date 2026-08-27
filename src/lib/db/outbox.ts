@@ -19,7 +19,7 @@
 import { STORE, idbAdd, idbGetAll, idbDeleteMany, idbPut, idbGetAllByIndex } from './idb'
 
 export type OutboxOp = 'insert' | 'update' | 'delete'
-export type SyncTable = 'habits' | 'habit_occurrences' | 'tasks'
+export type SyncTable = 'habits' | 'habit_occurrences' | 'tasks' | 'task_lists'
 
 export interface OutboxEntry {
   seq?: number

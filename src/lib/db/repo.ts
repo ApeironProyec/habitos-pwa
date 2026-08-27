@@ -13,7 +13,16 @@
 import { STORE, idbGetAll, idbGet, idbPut, idbPutMany, idbGetAllByIndex } from './idb'
 import { enqueue, newId, nowISO } from './outbox'
 import { emitDataChanged } from './events'
-import type { Habit, HabitInput, Occurrence, OccurrenceStatus, Task, TaskInput } from '@/lib/habits/types'
+import type {
+  Habit,
+  HabitInput,
+  Occurrence,
+  OccurrenceStatus,
+  Task,
+  TaskInput,
+  TaskList,
+  TaskListInput,
+} from '@/lib/habits/types'
 import { normalizeTime, slotsForDate, deviceTimezone } from '@/lib/habits/frequency'
 
 // ============================================================
@@ -33,6 +42,20 @@ export async function listTasks(): Promise<Task[]> {
   return all
     .filter((t) => !t.deleted_at)
     .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+}
+
+/** Listas de tareas del usuario (no borradas), por sort_order. */
+export async function listTaskLists(): Promise<TaskList[]> {
+  const all = await idbGetAll<TaskList>(STORE.taskLists)
+  return all
+    .filter((l) => !l.deleted_at)
+    .sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
+}
+
+/** Mapa id→nombre para etiquetar grupos. */
+export async function taskListNames(): Promise<Map<string, string>> {
+  const lists = await listTaskLists()
+  return new Map(lists.map((l) => [l.id, l.name]))
 }
 
 /** Ocurrencias de un rango de fechas (inclusive). */
@@ -227,9 +250,11 @@ export async function createTask(input: TaskInput, userId: string): Promise<Task
   const ts = nowISO()
   const task: Task = {
     ...input,
+    priority: (input as Partial<Task>).priority ?? 'medium',
+    tags: (input as Partial<Task>).tags ?? [],
     id: newId(),
     user_id: userId,
-    spent_minutes: input.spent_minutes ?? 0,
+    spent_minutes: (input as Partial<Task>).spent_minutes ?? 0,
     sort_order: Date.now(),
     completed_at: input.status === 'completed' ? ts : null,
     created_at: ts,
@@ -261,6 +286,55 @@ export async function deleteTask(id: string): Promise<void> {
   await idbPut(STORE.tasks, { ...current, deleted_at: ts, updated_at: ts })
   await enqueue('tasks', id, 'delete')
   emitDataChanged('tasks')
+}
+
+// ============================================================
+// Listas de tareas
+// ============================================================
+
+export async function createTaskList(input: TaskListInput, userId: string): Promise<TaskList> {
+  const ts = nowISO()
+  const list: TaskList = {
+    ...input,
+    id: newId(),
+    user_id: userId,
+    color: input.color ?? null,
+    sort_order: Date.now(),
+    created_at: ts,
+    updated_at: ts,
+    deleted_at: null,
+  }
+  await idbPut(STORE.taskLists, list)
+  await enqueue('task_lists', list.id, 'insert', {
+    id: list.id,
+    user_id: list.user_id,
+    name: list.name,
+    color: list.color,
+    sort_order: list.sort_order,
+    created_at: list.created_at,
+    updated_at: list.updated_at,
+  })
+  emitDataChanged('taskLists')
+  return list
+}
+
+export async function renameTaskList(id: string, name: string): Promise<void> {
+  const current = await idbGet<TaskList>(STORE.taskLists, id)
+  if (!current) throw new Error('Lista no encontrada')
+  const next: TaskList = { ...current, name, updated_at: nowISO() }
+  await idbPut(STORE.taskLists, next)
+  await enqueue('task_lists', id, 'update', { name, updated_at: next.updated_at })
+  emitDataChanged('taskLists')
+}
+
+/** Soft delete de lista; las tareas quedan con list_id apuntando a una lista borrada → 'General'. */
+export async function deleteTaskList(id: string): Promise<void> {
+  const current = await idbGet<TaskList>(STORE.taskLists, id)
+  if (!current) return
+  const ts = nowISO()
+  await idbPut(STORE.taskLists, { ...current, deleted_at: ts, updated_at: ts })
+  await enqueue('task_lists', id, 'delete')
+  emitDataChanged('taskLists')
 }
 
 export async function setTaskStatus(id: string, status: Task['status']): Promise<void> {
@@ -352,6 +426,11 @@ function serializeTask(t: Task): Record<string, unknown> {
     status: t.status,
     due_date: t.due_date,
     due_time: t.due_time,
+    priority: t.priority ?? 'medium',
+    tags: t.tags ?? [],
+    list_id: t.list_id,
+    reminder_date: t.reminder_date,
+    reminder_time: t.reminder_time,
     estimated_minutes: t.estimated_minutes,
     spent_minutes: t.spent_minutes,
     sort_order: t.sort_order,

@@ -7,12 +7,15 @@
  */
 
 export const DB_NAME = 'habitos-local'
-export const DB_VERSION = 1
+// v2: agrega task_lists (múltiples listas). La migración de clientes ya
+// instalados corre sola porque onupgradeneeded crea solo lo que falte.
+export const DB_VERSION = 2
 
 export const STORE = {
   habits: 'habits',
   occurrences: 'occurrences',
   tasks: 'tasks',
+  taskLists: 'task_lists',
   outbox: 'outbox',
   meta: 'meta',
 } as const
@@ -50,6 +53,10 @@ export function openDB(): Promise<IDBDatabase> {
 
       if (!db.objectStoreNames.contains(STORE.tasks)) {
         db.createObjectStore(STORE.tasks, { keyPath: 'id' })
+      }
+
+      if (!db.objectStoreNames.contains(STORE.taskLists)) {
+        db.createObjectStore(STORE.taskLists, { keyPath: 'id' })
       }
 
       if (!db.objectStoreNames.contains(STORE.outbox)) {
@@ -203,6 +210,7 @@ export async function wipeLocal(): Promise<void> {
     idbClear(STORE.habits),
     idbClear(STORE.occurrences),
     idbClear(STORE.tasks),
+    idbClear(STORE.taskLists),
     idbClear(STORE.outbox),
     idbClear(STORE.meta),
   ])

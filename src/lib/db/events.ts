@@ -6,7 +6,7 @@
  * el comportamiento anterior: `useHabits` corría de nuevo en cada montaje).
  */
 
-export type DataScope = 'habits' | 'occurrences' | 'tasks'
+export type DataScope = 'habits' | 'occurrences' | 'tasks' | 'taskLists'
 
 type Listener = (scope: DataScope) => void
 

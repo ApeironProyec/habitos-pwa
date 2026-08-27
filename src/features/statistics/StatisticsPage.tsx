@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Flame, TrendingUp, Activity, AlertCircle } from 'lucide-react'
 import { useHabits } from '@/features/habits/useHabits'
+import { useTasks } from '@/features/tasks/useTasks'
 import { SkeletonStats, EmptyState } from '@/components/Skeleton'
 import { onDataChanged } from '@/lib/db/events'
 import { listOccurrences } from '@/lib/db/repo'
@@ -13,6 +14,7 @@ import {
   dailyTotals,
   perHabitStats,
 } from '@/lib/habits/stats'
+import { dueBucket } from '@/lib/tasks/sort'
 import { cn } from '@/lib/utils'
 
 type StatsData = {
@@ -25,6 +27,7 @@ type StatsData = {
 
 export default function StatisticsPage() {
   const { habits, loading: habitsLoading } = useHabits()
+  const { tasks } = useTasks()
   const [range, setRange] = useState<'week' | 'month'>('month')
   const [data, setData] = useState<StatsData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -108,6 +111,15 @@ export default function StatisticsPage() {
   const activeCount = habits.filter((h) => h.is_active).length
   const maxExpected = Math.max(1, ...data.days.map(([, v]) => v.expected))
 
+  // ----- métricas de tareas (todo lo que existe contribuye a stats) -----
+  const taskPending = tasks.filter((t) => t.status !== 'completed' && !t.deleted_at)
+  const taskDoneAll = tasks.filter((t) => t.status === 'completed' && !t.deleted_at)
+  const taskOverdue = taskPending.filter((t) => dueBucket(t, today) === 'overdue').length
+  const taskToday = taskPending.filter((t) => dueBucket(t, today) === 'today').length
+  const taskCompletion =
+    tasks.length === 0 ? null : Math.round((taskDoneAll.length / (taskDoneAll.length + taskPending.length)) * 100)
+  const taskMinutes = tasks.reduce((s, t) => s + (t.spent_minutes ?? 0), 0)
+
   return (
     <div className="space-y-5 pb-6">
       <header className="fade-up">
@@ -151,43 +163,79 @@ export default function StatisticsPage() {
             <Metric label="Hábitos activos" value={String(activeCount)} i={3} />
           </div>
 
+          {/* Tareas */}
+          <div className="grid grid-cols-2 gap-3">
+            <Metric
+              label="Tareas para hoy"
+              value={String(taskToday)}
+              sub={taskOverdue > 0 ? `+${taskOverdue} vencidas` : 'al día'}
+              i={4}
+              accent={taskToday + taskOverdue > 0}
+            />
+            <Metric
+              label="Tareas completadas"
+              value={String(taskDoneAll.length)}
+              sub={taskCompletion === null ? undefined : `${taskCompletion}% histórico`}
+              i={5}
+            />
+            {taskMinutes > 0 && (
+              <div className="glass fade-up stagger col-span-2 p-4" style={{ '--i': 6 } as React.CSSProperties}>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Tiempo enfocado en tareas</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-[var(--text-primary)]">
+                  {taskMinutes >= 60 ? `${Math.floor(taskMinutes / 60)} h ${taskMinutes % 60} min` : `${taskMinutes} min`}
+                </p>
+              </div>
+            )}
+          </div>
+
           <section className="glass fade-up stagger p-4" style={{ '--i': 4 } as React.CSSProperties}>
             <h2 className="mb-3 flex items-center gap-2 text-[15px] font-semibold text-[var(--text-primary)]">
               <Activity className="h-4 w-4 text-violet-500" aria-hidden="true" /> Evolución diaria
             </h2>
-            <div className="flex h-28 items-end justify-between gap-1.5">
-              {data.days.map(([date, day], i) => {
-                // Altura proporcional al día más cargado, no al 100% teórico:
-                // así se ve la diferencia entre "poco esperado" y "no cumplido"
-                const ratio = day.expected === 0 ? 0 : day.done / day.expected
-                const scale = day.expected === 0 ? 0.02 : Math.max(0.08, ratio * (day.expected / maxExpected))
-                const full = day.expected > 0 && day.done >= day.expected
-                return (
-                  <div key={date} className="flex flex-1 flex-col items-center gap-1.5">
-                    <div className="flex h-24 w-full items-end" title={`${date}: ${day.done}/${day.expected}`}>
-                      <div
-                        className={cn(
-                          'bar-fill w-full rounded-md',
-                          full
-                            ? 'bg-emerald-500/90'
-                            : day.expected === 0
-                              ? 'bg-[var(--text-secondary)]/20'
-                              : 'bg-violet-500/80'
-                        )}
-                        style={{
-                          height: '100%',
-                          transform: `scaleY(${scale})`,
-                          transformOrigin: 'bottom',
-                          transitionDelay: `${i * 8}ms`,
-                        }}
-                      />
+            {/*
+              FIX bug móvil: 30 barras + labels en ~360px se aplastaban y el
+              número de día desbordaba su columna. Ahora: carril con scroll
+              horizontal suave y ancho mínimo por barra; si el ancho alcanza,
+              se distribuyen igual que antes.
+            */}
+            <div className="-mx-1 overflow-x-auto px-1 pb-1" style={{ scrollbarWidth: 'none' }}>
+              <div
+                className="flex h-28 min-w-full items-end justify-between"
+                style={{ gap: 'clamp(1px, 0.5vw, 6px)', minWidth: `${data.days.length * 18}px` }}
+              >
+                {data.days.map(([date, day], i) => {
+                  // Altura proporcional al día más cargado, no al 100% teórico:
+                  // así se ve la diferencia entre "poco esperado" y "no cumplido"
+                  const ratio = day.expected === 0 ? 0 : day.done / day.expected
+                  const scale = day.expected === 0 ? 0.02 : Math.max(0.08, ratio * (day.expected / maxExpected))
+                  const full = day.expected > 0 && day.done >= day.expected
+                  return (
+                    <div key={date} className="flex w-[14px] shrink-0 grow flex-col items-center gap-1.5">
+                      <div className="flex h-24 w-full items-end" title={`${date}: ${day.done}/${day.expected}`}>
+                        <div
+                          className={cn(
+                            'bar-fill w-full rounded-md',
+                            full
+                              ? 'bg-emerald-500/90'
+                              : day.expected === 0
+                                ? 'bg-[var(--text-secondary)]/20'
+                                : 'bg-violet-500/80'
+                          )}
+                          style={{
+                            height: '100%',
+                            transform: `scaleY(${scale})`,
+                            transformOrigin: 'bottom',
+                            transitionDelay: `${i * 8}ms`,
+                          }}
+                        />
+                      </div>
+                      <span className="text-center text-[9px] leading-none tabular-nums text-[var(--text-secondary)]">
+                        {Number(date.slice(8, 10))}
+                      </span>
                     </div>
-                    <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
-                      {Number(date.slice(8, 10))}
-                    </span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
           </section>
 
@@ -268,6 +316,7 @@ function Metric({
         {icon}
         {value}
       </p>
+      {sub && <p className="text-xs text-[var(--text-secondary)]">{sub}</p>}
       {sub && <p className="text-xs text-[var(--text-secondary)]">{sub}</p>}
     </div>
   )
