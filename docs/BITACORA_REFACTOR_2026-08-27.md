@@ -302,7 +302,48 @@ Lecciones/pitfalls (adicionales):
 - Los timestamps NAIVE en timestamptz son una bomba silenciosa: aquí se disfrazaba con slice()
   en la UI. Modelo correcto para "horarios": fecha/hora separadas + zona aparte.
 
+## 10. ✅ TAREAS 2.0 (27-ago, tarde) — commit 765b31e, EN PROD
+
+Rediseño completo del módulo de tareas según lo que Erick pidió:
+
+### Base de datos (migración `20260827030000_tasks_v2_priority_tags_lists.sql`)
+- Tabla nueva `task_lists` (id, user_id, name, color, sort_order, soft delete) + RLS 4 policies
+- `tasks.priority` ('low'|'medium'|'high', default medium, con check constraint)
+- `tasks.tags text[] default '{}'`, `tasks.list_id → task_lists(id) on delete set null`
+- `tasks.reminder_date date + reminder_time time` (hora LOCAL de pared, mismo modelo de ocurrencias)
+- Índices: idx_tasks_user_due, idx_tasks_user_list
+- Types regenerados; IndexedDB **v2** (store nuevo; migración de clientes es automática)
+
+### Pantalla Tareas
+- Creación RÁPIDA en línea (título+Enter) y botón "Detallada" con modal completo
+- Modal: título, descripción, prioridad (3 botones con color), fecha objetivo + hora,
+  recordatorio (fecha+hora), tags con sugerencias de los existentes, selector de lista
+- Agrupación: **Prioridad | Fecha | Lista** con controles chip
+- Filtros: por tag (chips generados automáticamente) y por lista
+- Completadas colapsables
+- Row chips: prioridad coloreada, vencida en rojo, hoy en violeta, 🔔 recordatorio, lista, #tags, minutos
+- Pomodoro global y presets ELIMINADOS (Erick: no viable como PWA sin background); queda foco 30min por tarea
+
+### "Hoy" integra tareas (lo que pidió Erick textualmente)
+- Secciones: ⚠️ Vencidas → 📌 Hoy → 🗓️ Próximas → 📥 Sin fecha (buildTodaySections)
+- Dentro de cada sección: prioridad primero (alta>media>baja), desempate fecha>hora (compareTasks)
+- Máx 5 por sección + link "Ver todas"
+- Chips resumen arriba: N vencidas / N para hoy
+
+### Stats ahora incluyen tareas
+- "Tareas para hoy" (con sub "+N vencidas"), "Tareas completadas" (+% histórico),
+  "Tiempo enfocado en tareas" (h/min de spent_minutes)
+- FIX bug móvil Evolución diaria: carril overflow-x-auto con min-width = días*18px,
+  barras w-[14px] shrink-0 grow, labels 9px — las 30 barras ya no se aplastan ni desbordan
+
+### Lógica pura testeada (`src/lib/tasks/sort.ts` + 14 tests)
+priorityWeight, dueBucket, compareTasks (prioridad→fecha→nulls→sort_order),
+buildTodaySections, groupTasks(3 modos), parseTags(comas/espacios/#, minúsculas, máx 8×24)
+
+### Verificado end-to-end (QA usuario nuevo, navegador real)
+Lista→2 tareas (rápida media sin fecha; detallada alta hoy 17:00 tags trabajo/urgente)→
+agrupación ALTA/MEDIA correcta→modo Fecha agrupa por día→Hoy muestra secciones y chips→
+servidor confirma priority/tags/due_date/due_time subidos. QA2 borrado completo (204s+200).
+
 ---
 
-*Generada por Lia · 2026-08-27 · sesión de refactor offline-first.*
-*Próximo hito sugerido: compilar verde → deploy → VERIFICAR OFFLINE REAL en el celu.*
