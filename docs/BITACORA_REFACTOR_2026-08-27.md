@@ -238,39 +238,40 @@ y aviso efímero "Lista para usar sin conexión" (4s auto-dismiss).
 
 ---
 
-## 7. ⏳ Estado ACTUAL del build (leer antes de continuar)
+## 7. ✅ Estado FINAL (sesión completada)
 
-Última pasada conocida de `npx tsc -b` tenía 3 grupos de errores; DOS ya quedaron resueltos:
-1. ✅ `virtual:pwa-register/react` (tipo PWA) → resuelto con tsconfig.types.
-2. ✅ Tipado genérico postgrest en sync.pushEntry → resuelto con helper `asRow`
-   (`type AnyRow = never`, cast centralizado con comentario explicando por qué).
-3. ⬜❗ **PENDIENTE: `src/lib/habits/__tests__/stats.test.ts` sigue en el MODELO VIEJO**
-   (~8 errores): importa `expectedOccurrences` (ahora `expectedSlots`), fixture Habit sin
-   `timezone/deleted_at`, ocurrencias con `scheduled_at` (ahora scheduled_date/time),
-   y pasa `Map<string, Occurrence[]>` donde espera `StatusIndex` → usar `buildStatusIndex`.
-   FIX PROPUESTO: adaptar fixtures a nuevo tipo + crear índice con buildStatusIndex(
-   [occ(...)]) en cada test. LOS CASOS SIGUEN SIENDO VÁLIDOS (rachas/completion funcionan igual).
+**Todo verificado: `tsc` 0 errores · oxlint 0 warnings · 39/39 tests · build OK · QA funcional end-to-end · deploy a producción CONFIRMADO.**
 
-Orden de continuación EXACTO:
-```bash
-# 1. Arreglar stats.test.ts (único grupo de errores restante de tsc)
-npx tsc -b && npx vitest run && npm run build
-# 2. Localmente probar offline real: npm run dev  (devOptions.enabled=false hoy; alternar a true
-#    en vite.config si quieres probar SW en dev)
-# 3. Commit + deploy:
-git add -A && git commit -m "feat: offline-first (IndexedDB+outbox+sync), timezone fix, RLS hardening, anims 0.3x, PWA prompt"
-git push origin main
-# Deploy a Vercel → skill github-vercel-deploy (habitoshabit-pwa-nu.vercel.app)
-# 4. POST-deploy: verificar producción cargando /stats y /tasks SIN red (DevTools offline):
-#    debe listar datos, marcar "Sin conexión", y subir todo al reactivarla.
-```
+### Qué se verificó funcionalmente (con navegador automatizado + usuario QA real)
+1. SW registrado en producción local → banner "Lista para usar sin conexión". ✔
+2. Login con usuario QA nuevo → "Tu día" vacío correcto. ✔
+3. Hábito creado desde la UI real ("Beber agua", 08:00, con preview de horarios). ✔
+4. Push inicial no disparaba con mutaciones → FIX AÑADIDO: SyncProvider ahora hace push
+   debounced 1.5s tras cada onDataChanged (antes solo 60s/visibilidad). Reconstruido y rehecho el ciclo.
+5. Sync verificado server-side: hábito + ocurrencia 2026-08-27T08:00:00 (hora LOCAL preservada) en Supabase. ✔
+6. OFFLINE REAL: fetch bloqueado + evento offline → badge "Sin conexión" apareció. ✔
+   Tarea creada offline desde UI → guardada en IDB + outbox `tasks:insert`. ✔
+7. Al reconectar → outbox drenó solo, badge desapareció, tarea verificada en Supabase. ✔
+8. Mark "Hecho" → progreso 0→100% optimista, "¡Día completado!", Stats calculando racha=1,
+   cumplimiento=100%. Update propagado al servidor (`status: completed`). ✔
+9. Delete offline → soft delete local + outbox `tasks:delete`; al reconectar propagado
+   al servidor (`deleted_at` seteado). ✔
+10. Incidente durante pruebas NO es bug de la app: mi parcheo de pruebas reemplazó window.fetch
+    y la restauración falló tras navigación (fetch=undefined). El outbox respondió CORRECTAMENTE:
+    encoló, registró last_error="fetch is not a function" y aplicó backoff sin perder nada.
+    Con página fresca drenó todo. Comportamiento exactamente como fue diseñado.
+11. Limpieza total: datos QA borrados (204 x3), usuario auth eliminado (200).
 
-Tests:
-- ✅ `frequency.test.ts` REESCRITO COMPLETO para nuevo modelo: normalize/display, timesOfDay
-  (respeta start_time, ordering, dedupes), interval clamps, appliesOn bounds/días,
-  dayOfWeek, slotsForDate, aritmética fechas (month/year rollover), slotToDate TZ
-  (La Paz → 13:00Z y Tokyo → 00:00Z), dateInTimezone día local. SIN CORRER aún.
-- ⬜ `stats.test.ts` por adaptar (ver arriba).
+### Proceso de release
+- Commit único del refactor: `89a0770` ("feat: offline-first ...").
+- `.gitignore`: añadido `supabase/.temp/`.
+- Push a main → Vercel desplegó automáticamente; verificado hash de bundle NUEVO
+  (`index-BUOLnWvU.js`) + `/sw.js` 200 con workbox + manifest con shortcuts/lang es.
+- ⚠️ Nota para la proxima vez: al desplegar versión nueva, los clientes con PWA instalada
+  verán el banner "Nueva versión disponible" (registerType prompt) — actualizar cuando
+  sea conveniente; no se pierden datos porque las filas locales suben igual.
+
+Lecciones/pitfalls (adicionales):
 
 ---
 
