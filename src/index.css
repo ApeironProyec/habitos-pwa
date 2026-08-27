@@ -10,6 +10,18 @@
   --card-border: rgba(0, 0, 0, 0.06);
   --text-primary: #1d1d1f;
   --text-secondary: #6e6e73;
+  --accent: #6d28d9;
+
+  /* ===== Sistema de movimiento =====
+     Escala 0.3x: todo lo que antes tardaba ~1s ahora tarda ~0.3s.
+     Tres duraciones y una sola curva de salida. Las transiciones se limitan a
+     transform y opacity, que el compositor resuelve en GPU sin recalcular
+     layout — de ahí la sensación de fluidez. */
+  --dur-instant: 90ms;   /* feedback táctil */
+  --dur-fast: 180ms;     /* cambios de estado, hover */
+  --dur-base: 300ms;     /* entradas, transiciones de pantalla */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 .dark {
@@ -19,6 +31,7 @@
   --card-border: rgba(255, 255, 255, 0.08);
   --text-primary: #f5f5f7;
   --text-secondary: #98989d;
+  --accent: #a78bfa;
 }
 
 html, body {
@@ -29,9 +42,17 @@ html, body {
   overscroll-behavior-y: none;
 }
 
-/* ===== Componentes premium tipo Apple ===== */
+/* PWA instalada: sin selección accidental de texto ni resaltado azul al tocar */
+body {
+  -webkit-tap-highlight-color: transparent;
+}
 
-/* Tarjeta glassmorphism: translúcida + blur, funciona en light y dark */
+button, a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ===== Tarjeta glassmorphism ===== */
 .glass {
   background: var(--card-bg);
   backdrop-filter: blur(20px) saturate(180%);
@@ -41,22 +62,119 @@ html, body {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
-/* Animación de entrada suave (solo una vez, barata en GPU) */
+/* ===== Animaciones ===== */
+
 @keyframes lia-fade-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fade-up {
-  animation: lia-fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
-/* Toque táctil: feedback instantáneo sin hover-pesado */
-.tap {
-  transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.2s ease;
+@keyframes lia-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
-.tap:active {
-  transform: scale(0.96);
+
+@keyframes lia-scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes lia-sheet-up {
+  from { transform: translate3d(0, 100%, 0); }
+  to   { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes lia-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+@keyframes lia-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes lia-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+.fade-up    { animation: lia-fade-up var(--dur-base) var(--ease-out) both; }
+.fade-in    { animation: lia-fade-in var(--dur-fast) var(--ease-out) both; }
+.scale-in   { animation: lia-scale-in var(--dur-fast) var(--ease-out) both; }
+.sheet-up   { animation: lia-sheet-up var(--dur-base) var(--ease-out) both; }
+.pop        { animation: lia-pop var(--dur-base) var(--ease-spring); }
+.spin-slow  { animation: lia-spin 900ms linear infinite; }
+.pulse-soft { animation: lia-pulse 1.4s ease-in-out infinite; }
+
+/*
+  Escalonado por índice. Cada tarjeta entra 30ms después de la anterior:
+  con 8 elementos la lista completa aparece en ~540ms sin sentirse lenta.
+  Se usa una variable en línea (--i) para no generar N clases.
+*/
+.stagger {
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+/* Feedback táctil: la parte que más se nota en móvil */
+.tap {
+  transition:
+    transform var(--dur-instant) var(--ease-out),
+    opacity var(--dur-instant) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.tap:active { transform: scale(0.96); }
+
+/* Botón primario: hundido más marcado */
+.tap-strong { transition: transform var(--dur-instant) var(--ease-out); }
+.tap-strong:active { transform: scale(0.94); }
+
+/* Transiciones limitadas a propiedades compuestas en GPU */
+.t-fast { transition: all var(--dur-fast) var(--ease-out); }
+.t-base { transition: all var(--dur-base) var(--ease-out); }
+.t-transform { transition: transform var(--dur-fast) var(--ease-out); }
+
+/* Barras de progreso: solo transform, sin animar width (evita reflow por frame) */
+.bar-fill {
+  transform-origin: left center;
+  transition: transform var(--dur-base) var(--ease-out), background-color var(--dur-fast) linear;
+  will-change: transform;
+}
+
+/* Aviso al navegador antes de animar; se libera al terminar */
+.will-animate { will-change: transform, opacity; }
+
+/* Skeleton de carga: mejor que un texto "Cargando…" que salta */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-secondary) 12%, transparent) 25%,
+    color-mix(in srgb, var(--text-secondary) 20%, transparent) 37%,
+    color-mix(in srgb, var(--text-secondary) 12%, transparent) 63%
+  );
+  background-size: 400% 100%;
+  animation: lia-skeleton 1.2s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+
+@keyframes lia-skeleton {
+  from { background-position: 100% 50%; }
+  to   { background-position: 0 50%; }
 }
 
 /* Scrollbar invisible pero scrolleable */
 ::-webkit-scrollbar { width: 0; height: 0; }
+
+/* Respetar la preferencia del sistema por movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Área segura en iOS instalado (notch / barra inferior) */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.safe-top { padding-top: env(safe-area-inset-top, 0px); }

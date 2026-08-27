@@ -1,5 +1,5 @@
 import type { Habit, Occurrence } from './types'
-import { appliesOn, scheduledTimesForDate } from './frequency'
+import { appliesOn, dateRange, normalizeTime, slotsForDate, timesOfDay } from './frequency'
 
 /** Subconjunto de Habit que necesitan los cálculos. */
 export type HabitLite = Pick<
@@ -7,171 +7,154 @@ export type HabitLite = Pick<
   'id' | 'name' | 'icon' | 'color' | 'frequency_type' | 'frequency_config' | 'start_date' | 'end_date'
 >
 
-/** Ocurrencias esperadas (scheduled) para un hábito en un rango de fechas [from, to] (YYYY-MM-DD, local). */
-export function expectedOccurrences(
-  habit: HabitLite,
-  from: string,
-  to: string
-): string[] {
-  const out: string[] = []
-  const cursor = new Date(from + 'T12:00:00')
-  const end = new Date(to + 'T12:00:00')
-  while (cursor <= end) {
-    const d = toYMD(cursor)
-    out.push(...scheduledTimesForDate(habit, d))
-    cursor.setDate(cursor.getDate() + 1)
+/**
+ * Índice de slots completados: 'habitId|fecha|hora' → estado.
+ *
+ * Se construye UNA vez por cálculo. La versión anterior lo reconstruía dentro
+ * del bucle de días: `bestStreak` con 365 días y 10 hábitos creaba 3.650 Maps
+ * por render de la pantalla de estadísticas.
+ */
+export type StatusIndex = Map<string, Occurrence['status']>
+
+export function buildStatusIndex(occurrences: Occurrence[]): StatusIndex {
+  const map: StatusIndex = new Map()
+  for (const o of occurrences) {
+    if (o.deleted_at) continue
+    map.set(`${o.habit_id}|${o.scheduled_date}|${normalizeTime(o.scheduled_time)}`, o.status)
   }
-  return out
-}
-
-function toYMD(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-/** Índice: scheduled_at → occurrence (para lookups rápidos). */
-export function indexByScheduled(occurrences: Occurrence[]): Map<string, Occurrence> {
-  const map = new Map<string, Occurrence>()
-  for (const o of occurrences) map.set(o.scheduled_at, o)
   return map
 }
 
-/** Porcentaje de cumplimiento en un rango (0-100). Requiere lista de hábitos + sus ocurrencias. */
+function isDone(index: StatusIndex, habitId: string, date: string, time: string): boolean {
+  return index.get(`${habitId}|${date}|${time}`) === 'completed'
+}
+
+/** Cuenta esperadas y completadas de un día concreto. */
+function dayTotals(
+  habits: HabitLite[],
+  index: StatusIndex,
+  date: string
+): { expected: number; done: number } {
+  let expected = 0
+  let done = 0
+  for (const h of habits) {
+    if (!appliesOn(h, date)) continue
+    for (const slot of slotsForDate(h, date)) {
+      expected++
+      if (isDone(index, h.id, date, slot.time)) done++
+    }
+  }
+  return { expected, done }
+}
+
+/** Porcentaje de cumplimiento en un rango (0-100). `null` si nada era esperado. */
 export function completionRate(
   habits: HabitLite[],
-  occurrencesByHabit: Map<string, Occurrence[]>,
+  index: StatusIndex,
   from: string,
   to: string
 ): number | null {
   let expected = 0
   let done = 0
-  for (const h of habits) {
-    const occs = occurrencesByHabit.get(h.id) ?? []
-    const occMap = indexByScheduled(occs)
-    for (const sched of expectedOccurrences(h, from, to)) {
-      expected++
-      if (occMap.get(sched)?.status === 'completed') done++
-    }
+  for (const date of dateRange(from, to)) {
+    const t = dayTotals(habits, index, date)
+    expected += t.expected
+    done += t.done
   }
   if (expected === 0) return null
   return Math.round((done / expected) * 100)
 }
 
-/** Racha actual (días consecutivos con 100% de cumplimiento, terminando hoy o ayer). */
-export function currentStreak(
-  habits: HabitLite[],
-  occurrencesByHabit: Map<string, Occurrence[]>,
-  today: string
-): number {
+/** ¿El día está completo? Falso si no había nada que hacer. */
+export function dayCompleted(habits: HabitLite[], index: StatusIndex, date: string): boolean {
+  const { expected, done } = dayTotals(habits, index, date)
+  return expected > 0 && done === expected
+}
+
+/**
+ * Racha actual: días consecutivos al 100% terminando hoy o ayer.
+ *
+ * Los días sin nada programado (ej. un hábito solo de lunes y miércoles) no
+ * rompen la racha: se saltan. Antes cualquier día vacío la cortaba, lo que
+ * hacía imposible mantener racha con hábitos semanales.
+ */
+export function currentStreak(habits: HabitLite[], index: StatusIndex, today: string): number {
   let streak = 0
-  const cursor = new Date(today + 'T12:00:00')
+  let cursor = today
 
-  // si hoy aún no se completó, la racha cuenta desde ayer
-  const todayRate = dayCompleted(habits, occurrencesByHabit, today)
-  if (!todayRate) cursor.setDate(cursor.getDate() - 1)
+  if (!dayCompleted(habits, index, today)) {
+    const t = dayTotals(habits, index, today)
+    // Si hoy hay pendientes, la racha se mide hasta ayer
+    if (t.expected > 0) cursor = shift(today, -1)
+  }
 
-  while (true) {
-    const d = toYMD(cursor)
-    const completed = dayCompleted(habits, occurrencesByHabit, d)
-    if (!completed) break
+  // Tope de seguridad: 2 años
+  for (let guard = 0; guard < 730; guard++) {
+    const { expected } = dayTotals(habits, index, cursor)
+    if (expected === 0) {
+      cursor = shift(cursor, -1)
+      continue
+    }
+    if (!dayCompleted(habits, index, cursor)) break
     streak++
-    cursor.setDate(cursor.getDate() - 1)
+    cursor = shift(cursor, -1)
   }
   return streak
 }
 
-/** Mejor racha histórica (recorriendo desde start_date hasta hoy). */
+/** Mejor racha del período (misma regla: los días vacíos no cortan). */
 export function bestStreak(
   habits: HabitLite[],
-  occurrencesByHabit: Map<string, Occurrence[]>,
+  index: StatusIndex,
   today: string,
   lookbackDays = 365
 ): number {
-  const start = new Date(today + 'T12:00:00')
-  start.setDate(start.getDate() - lookbackDays)
   let best = 0
   let current = 0
-  const cursor = new Date(start)
-  const end = new Date(today + 'T12:00:00')
-  while (cursor <= end) {
-    const d = toYMD(cursor)
-    if (dayCompleted(habits, occurrencesByHabit, d)) {
+  for (const date of dateRange(shift(today, -lookbackDays), today)) {
+    const { expected, done } = dayTotals(habits, index, date)
+    if (expected === 0) continue
+    if (done === expected) {
       current++
       best = Math.max(best, current)
     } else {
       current = 0
     }
-    cursor.setDate(cursor.getDate() + 1)
   }
   return best
 }
 
-/** ¿Un día específico está 100% completado (todas las ocurrencias esperadas hechas)? */
-export function dayCompleted(
-  habits: HabitLite[],
-  occurrencesByHabit: Map<string, Occurrence[]>,
-  date: string
-): boolean {
-  let expected = 0
-  let done = 0
-  for (const h of habits) {
-    if (!appliesOn(h, date)) continue
-    const occs = occurrencesByHabit.get(h.id) ?? []
-    const occMap = indexByScheduled(occs)
-    for (const sched of scheduledTimesForDate(h, date)) {
-      expected++
-      if (occMap.get(sched)?.status === 'completed') done++
-    }
-  }
-  return expected > 0 && done === expected
-}
-
-/** Totales por día para un rango: { date: { expected, done } }. */
+/** Totales por día para un rango. */
 export function dailyTotals(
   habits: HabitLite[],
-  occurrencesByHabit: Map<string, Occurrence[]>,
+  index: StatusIndex,
   from: string,
   to: string
 ): Map<string, { expected: number; done: number }> {
   const out = new Map<string, { expected: number; done: number }>()
-  const cursor = new Date(from + 'T12:00:00')
-  const end = new Date(to + 'T12:00:00')
-  while (cursor <= end) {
-    const d = toYMD(cursor)
-    let expected = 0
-    let done = 0
-    for (const h of habits) {
-      if (!appliesOn(h, d)) continue
-      const occs = occurrencesByHabit.get(h.id) ?? []
-      const occMap = indexByScheduled(occs)
-      for (const sched of scheduledTimesForDate(h, d)) {
-        expected++
-        if (occMap.get(sched)?.status === 'completed') done++
-      }
-    }
-    out.set(d, { expected, done })
-    cursor.setDate(cursor.getDate() + 1)
+  for (const date of dateRange(from, to)) {
+    out.set(date, dayTotals(habits, index, date))
   }
   return out
 }
 
-/** Cumplimiento por hábito: { habit_id: { expected, done, pct } } para el rango. */
+/** Cumplimiento por hábito en el rango. */
 export function perHabitStats(
   habits: HabitLite[],
-  occurrencesByHabit: Map<string, Occurrence[]>,
+  index: StatusIndex,
   from: string,
   to: string
 ) {
+  const dates = dateRange(from, to)
   return habits.map((h) => {
-    const occs = occurrencesByHabit.get(h.id) ?? []
-    const occMap = indexByScheduled(occs)
     let expected = 0
     let done = 0
-    for (const sched of expectedOccurrences(h, from, to)) {
-      expected++
-      if (occMap.get(sched)?.status === 'completed') done++
+    for (const date of dates) {
+      if (!appliesOn(h, date)) continue
+      for (const slot of slotsForDate(h, date)) {
+        expected++
+        if (isDone(index, h.id, date, slot.time)) done++
+      }
     }
     return {
       habit: h,
@@ -180,4 +163,25 @@ export function perHabitStats(
       pct: expected === 0 ? 0 : Math.round((done / expected) * 100),
     }
   })
+}
+
+/** Slots esperados de un hábito en un rango (para tests y proyecciones). */
+export function expectedSlots(habit: HabitLite, from: string, to: string): string[] {
+  const out: string[] = []
+  for (const date of dateRange(from, to)) {
+    for (const slot of slotsForDate(habit, date)) {
+      out.push(`${date}T${slot.time}`)
+    }
+  }
+  return out
+}
+
+/** Cuántas ocurrencias se esperan por día, sin importar la fecha. */
+export function slotsPerDay(habit: HabitLite): number {
+  return timesOfDay(habit).length
+}
+
+function shift(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d) + days * 86_400_000).toISOString().slice(0, 10)
 }

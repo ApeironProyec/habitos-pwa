@@ -2,8 +2,12 @@ import { useState } from 'react'
 import { Plus, Pencil, Trash2, Play, Timer as TimerIcon, CheckCircle2, Circle } from 'lucide-react'
 import { useTasks } from './useTasks'
 import { Timer } from './Timer'
+import { Modal } from '@/components/Modal'
+import { SkeletonList, EmptyState } from '@/components/Skeleton'
 import type { Task } from '@/lib/habits/types'
 import { cn } from '@/lib/utils'
+
+const TIMER_PRESETS = [15, 25, 30, 45, 60]
 
 export default function TasksPage() {
   const { tasks, loading, error, create, update, remove, setStatus, addSpentMinutes } = useTasks()
@@ -12,9 +16,12 @@ export default function TasksPage() {
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [editDue, setEditDue] = useState('')
-  const [activeTimer, setActiveTimer] = useState<{ task: Task; minutes: number } | null>(null)
+  const [editEstimate, setEditEstimate] = useState('')
+  const [activeTimer, setActiveTimer] = useState<{ taskId: string; minutes: number } | null>(null)
+  /** Duración elegida. Antes existía en el estado pero startTask ignoraba su valor. */
   const [timerMinutes, setTimerMinutes] = useState(30)
   const [pomodoroOpen, setPomodoroOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const pending = tasks.filter((t) => t.status !== 'completed')
   const completed = tasks.filter((t) => t.status === 'completed')
@@ -22,65 +29,95 @@ export default function TasksPage() {
   async function addTask(e: React.FormEvent) {
     e.preventDefault()
     const title = newTitle.trim()
-    if (!title) return
-    await create({ title, description: null, status: 'pending', due_date: null, due_time: null, estimated_minutes: null })
-    setNewTitle('')
+    if (!title || busy) return
+    setBusy(true)
+    try {
+      await create({
+        title,
+        description: null,
+        status: 'pending',
+        due_date: null,
+        due_time: null,
+        estimated_minutes: null,
+      })
+      setNewTitle('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function openEdit(task: Task) {
+    setEditing(task)
+    setEditTitle(task.title)
+    setEditDesc(task.description ?? '')
+    setEditDue(task.due_date ?? '')
+    setEditEstimate(task.estimated_minutes != null ? String(task.estimated_minutes) : '')
   }
 
   async function saveEdit() {
     if (!editing) return
     const title = editTitle.trim()
     if (!title) return
+    const estimate = editEstimate.trim() ? Number(editEstimate) : null
     await update(editing.id, {
       title,
       description: editDesc.trim() || null,
       due_date: editDue || null,
+      estimated_minutes: estimate != null && estimate > 0 ? Math.round(estimate) : null,
     })
     setEditing(null)
   }
 
   function startTask(task: Task) {
-    setActiveTimer({ task, minutes: 30 })
-    // marca como en progreso
-    if (task.status === 'pending') update(task.id, { status: 'in_progress' })
+    // Usa el estimado de la tarea si lo tiene; si no, la duración elegida
+    const minutes = task.estimated_minutes && task.estimated_minutes > 0 ? task.estimated_minutes : timerMinutes
+    setActiveTimer({ taskId: task.id, minutes })
+    if (task.status === 'pending') void update(task.id, { status: 'in_progress' })
   }
 
-  function TaskRow({ task }: { task: Task }) {
-    const isActive = activeTimer?.task.id === task.id
+  const inputCls =
+    'w-full rounded-xl border border-[var(--card-border)] bg-black/[0.03] px-3.5 py-2.5 text-[15px] text-[var(--text-primary)] outline-none t-fast focus:border-violet-500 focus:ring-2 focus:ring-violet-500/25 dark:bg-white/[0.06]'
+
+  function TaskRow({ task, index }: { task: Task; index: number }) {
+    const isActive = activeTimer?.taskId === task.id
     return (
       <li
         className={cn(
-          'group rounded-2xl bg-white p-3.5 shadow-sm ring-1 ring-zinc-100 transition dark:bg-zinc-900 dark:ring-zinc-800',
-          task.status === 'in_progress' && 'ring-2 ring-violet-400 dark:ring-violet-500'
+          'glass fade-up stagger t-fast p-3.5',
+          task.status === 'in_progress' && 'ring-2 ring-violet-500/40'
         )}
+        style={{ '--i': index } as React.CSSProperties}
       >
         <div className="flex items-center gap-3">
           <button
             onClick={() => setStatus(task.id, task.status === 'completed' ? 'pending' : 'completed')}
-            className="shrink-0 text-zinc-300 transition hover:text-emerald-500 dark:text-zinc-600"
-            title={task.status === 'completed' ? 'Desmarcar' : 'Completar'}
+            className="tap shrink-0 text-[var(--text-secondary)] hover:text-emerald-500"
+            aria-label={task.status === 'completed' ? `Desmarcar ${task.title}` : `Completar ${task.title}`}
           >
             {task.status === 'completed' ? (
-              <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+              <CheckCircle2 className="pop h-6 w-6 text-emerald-500" aria-hidden="true" />
             ) : (
-              <Circle className="h-6 w-6" />
+              <Circle className="h-6 w-6" aria-hidden="true" />
             )}
           </button>
 
           <div className="min-w-0 flex-1">
             <p
               className={cn(
-                'truncate font-medium text-zinc-800 dark:text-zinc-100',
-                task.status === 'completed' && 'text-zinc-400 line-through dark:text-zinc-500'
+                'truncate font-medium text-[var(--text-primary)]',
+                task.status === 'completed' && 'text-[var(--text-secondary)] line-through'
               )}
             >
               {task.title}
             </p>
-            <p className="text-xs text-zinc-400 dark:text-zinc-500">
-              {task.status === 'in_progress' && <span className="font-semibold text-violet-600 dark:text-violet-400">En curso · </span>}
+            <p className="truncate text-xs text-[var(--text-secondary)]">
+              {task.status === 'in_progress' && (
+                <span className="font-semibold text-violet-600 dark:text-violet-400">En curso · </span>
+              )}
               {task.spent_minutes > 0 && `${task.spent_minutes} min invertidos`}
-              {task.estimated_minutes ? ` · estimado ${task.estimated_minutes} min` : ''}
+              {task.estimated_minutes ? `${task.spent_minutes > 0 ? ' · ' : ''}est. ${task.estimated_minutes} min` : ''}
               {task.due_date ? ` · vence ${task.due_date}` : ''}
+              {!task.spent_minutes && !task.estimated_minutes && !task.due_date && 'Sin detalles'}
             </p>
           </div>
 
@@ -88,22 +125,24 @@ export default function TasksPage() {
             <button
               onClick={() => startTask(task)}
               disabled={task.status === 'completed'}
-              className="rounded-lg bg-violet-600 p-2 text-white transition hover:bg-violet-700 active:scale-95 disabled:opacity-40"
-              title="Iniciar con temporizador (30 min)"
+              className="tap rounded-lg bg-violet-600 p-2 text-white disabled:opacity-40"
+              aria-label={`Iniciar temporizador para ${task.title}`}
             >
-              <Play className="h-4 w-4" />
+              <Play className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
-              onClick={() => { setEditing(task); setEditTitle(task.title); setEditDesc(task.description ?? ''); setEditDue(task.due_date ?? '') }}
-              className="rounded-lg p-2 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              onClick={() => openEdit(task)}
+              className="tap rounded-lg p-2 text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/10"
+              aria-label={`Editar ${task.title}`}
             >
-              <Pencil className="h-4 w-4" />
+              <Pencil className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               onClick={() => remove(task.id)}
-              className="rounded-lg p-2 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+              className="tap rounded-lg p-2 text-[var(--text-secondary)] hover:bg-red-500/10 hover:text-red-600"
+              aria-label={`Eliminar ${task.title}`}
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -111,11 +150,11 @@ export default function TasksPage() {
         {isActive && activeTimer && (
           <div className="mt-3">
             <Timer
-              key={activeTimer.task.id + '-' + activeTimer.minutes}
+              key={`${activeTimer.taskId}-${activeTimer.minutes}`}
               initialMinutes={activeTimer.minutes}
-              label={activeTimer.task.title}
-              onComplete={async () => {
-                await addSpentMinutes(activeTimer.task.id, activeTimer.minutes)
+              label={task.title}
+              onComplete={async (elapsed) => {
+                await addSpentMinutes(activeTimer.taskId, elapsed)
                 setActiveTimer(null)
               }}
               onClose={() => setActiveTimer(null)}
@@ -126,66 +165,62 @@ export default function TasksPage() {
     )
   }
 
-  const inputCls =
-    'w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-[15px] outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:border-violet-400 dark:focus:ring-violet-900'
-
   return (
     <div className="space-y-5">
-      <header className="flex items-center justify-between">
+      <header className="fade-up flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Tareas</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">{pending.length} pendientes</p>
+          <h1 className="text-[28px] font-bold tracking-tight text-[var(--text-primary)]">Tareas</h1>
+          <p className="text-sm text-[var(--text-secondary)]">{pending.length} pendientes</p>
         </div>
         <button
-          onClick={() => setPomodoroOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition active:scale-95"
+          onClick={() => setPomodoroOpen((v) => !v)}
+          aria-pressed={pomodoroOpen}
+          className="tap-strong flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-rose-600/25"
         >
-          <TimerIcon className="h-4 w-4" /> Pomodoro
+          <TimerIcon className="h-4 w-4" aria-hidden="true" /> Pomodoro
         </button>
       </header>
 
-      {/* Pomodoro global */}
       {pomodoroOpen && (
         <Timer
           initialMinutes={25}
           label="Pomodoro — 25 min de foco"
-          onComplete={() => {
-            setTimeout(() => setPomodoroOpen(false), 4000)
-          }}
           onClose={() => setPomodoroOpen(false)}
         />
       )}
 
-      {/* Nueva tarea rápida */}
-      <form onSubmit={addTask} className="flex gap-2">
+      <form onSubmit={addTask} className="fade-up flex gap-2">
         <input
           className={inputCls}
           placeholder="Agregar tarea… (ej. Barrer)"
+          aria-label="Nueva tarea"
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
         />
         <button
           type="submit"
-          className="shrink-0 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow transition active:scale-95"
+          disabled={busy || !newTitle.trim()}
+          className="tap-strong shrink-0 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white shadow disabled:opacity-40"
+          aria-label="Agregar tarea"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
       </form>
 
-      {/* Selector de minutos del timer */}
       {!activeTimer && (
-        <div className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm ring-1 ring-zinc-100 dark:bg-zinc-900 dark:ring-zinc-800">
-          <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Duración del temporizador</span>
+        <div className="glass fade-up flex items-center justify-between p-3">
+          <span className="text-sm font-medium text-[var(--text-secondary)]">Duración del temporizador</span>
           <div className="flex gap-1.5">
-            {[15, 30, 45, 60].map((m) => (
+            {TIMER_PRESETS.map((m) => (
               <button
                 key={m}
                 onClick={() => setTimerMinutes(m)}
+                aria-pressed={timerMinutes === m}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-sm font-semibold transition',
+                  'tap rounded-lg px-3 py-1.5 text-sm font-semibold',
                   timerMinutes === m
                     ? 'bg-violet-600 text-white'
-                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                    : 'bg-black/5 text-[var(--text-secondary)] dark:bg-white/10'
                 )}
               >
                 {m}′
@@ -195,31 +230,33 @@ export default function TasksPage() {
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && (
+        <p role="alert" className="fade-in rounded-xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
 
       {loading ? (
-        <p className="pt-8 text-center text-sm text-zinc-400">Cargando…</p>
+        <SkeletonList count={3} />
       ) : (
         <>
-          {pending.length === 0 && !loading && (
-            <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-              Sin tareas. Agrega la primera arriba.
-            </p>
+          {pending.length === 0 && (
+            <EmptyState title="Sin tareas pendientes." hint="Agrega la primera arriba." />
           )}
           <ul className="space-y-2.5">
-            {pending.map((t) => (
-              <TaskRow key={t.id} task={t} />
+            {pending.map((t, i) => (
+              <TaskRow key={t.id} task={t} index={i} />
             ))}
           </ul>
 
           {completed.length > 0 && (
             <section>
-              <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+              <p className="mb-2 mt-6 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                 Completadas ({completed.length})
               </p>
               <ul className="space-y-2">
-                {completed.map((t) => (
-                  <TaskRow key={t.id} task={t} />
+                {completed.map((t, i) => (
+                  <TaskRow key={t.id} task={t} index={i} />
                 ))}
               </ul>
             </section>
@@ -227,27 +264,66 @@ export default function TasksPage() {
         </>
       )}
 
-      {/* Modal editar */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={() => setEditing(null)}>
-          <div
-            className="w-full max-w-md rounded-t-3xl bg-zinc-50 p-5 pb-8 sm:rounded-3xl dark:bg-zinc-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="mb-4 text-lg font-bold text-zinc-900 dark:text-zinc-100">Editar tarea</h2>
-            <div className="space-y-3">
-              <input className={inputCls} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Título" autoFocus />
-              <input className={inputCls} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder="Descripción (opcional)" />
-              <input className={inputCls} type="date" value={editDue} onChange={(e) => setEditDue(e.target.value)} />
-              <button
-                onClick={saveEdit}
-                className="w-full rounded-xl bg-violet-700 py-3 text-[15px] font-semibold text-white shadow transition active:scale-[0.98]"
-              >
-                Guardar
-              </button>
+        <Modal
+          title="Editar tarea"
+          onClose={() => setEditing(null)}
+          footer={
+            <button
+              onClick={saveEdit}
+              className="tap-strong w-full rounded-xl bg-violet-700 py-3 text-[15px] font-semibold text-white shadow"
+            >
+              Guardar
+            </button>
+          }
+        >
+          <div className="space-y-3 pb-2">
+            <input
+              className={inputCls}
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Título"
+              aria-label="Título"
+            />
+            <input
+              className={inputCls}
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              placeholder="Descripción (opcional)"
+              aria-label="Descripción"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]" htmlFor="task-due">
+                  Vence
+                </label>
+                <input
+                  id="task-due"
+                  className={inputCls}
+                  type="date"
+                  value={editDue}
+                  onChange={(e) => setEditDue(e.target.value)}
+                />
+              </div>
+              <div>
+                {/* estimated_minutes estaba en el esquema pero no había forma de escribirlo */}
+                <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]" htmlFor="task-est">
+                  Estimado (min)
+                </label>
+                <input
+                  id="task-est"
+                  className={inputCls}
+                  type="number"
+                  min="1"
+                  inputMode="numeric"
+                  value={editEstimate}
+                  onChange={(e) => setEditEstimate(e.target.value)}
+                  placeholder="30"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

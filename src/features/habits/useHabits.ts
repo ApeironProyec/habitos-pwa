@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase/client'
-import type { Habit, Occurrence } from '@/lib/habits/types'
-import { ensureTodayOccurrences, setOccurrenceStatus } from '@/lib/habits/occurrences'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAuth } from '@/features/auth/useAuth'
+import { onDataChanged } from '@/lib/db/events'
+import * as repo from '@/lib/db/repo'
+import { todayStr } from '@/lib/habits/frequency'
+import type { Habit, Occurrence, OccurrenceStatus } from '@/lib/habits/types'
 
+/**
+ * Los datos se leen de IndexedDB, no de la red: la primera pintura es
+ * inmediata y funciona sin conexión. El motor de sync emite eventos cuando
+ * llegan cambios remotos y estos hooks se refrescan solos, así que ya no hace
+ * falta refetchear en cada navegación.
+ */
 export function useHabits() {
   const [habits, setHabits] = useState<Habit[]>([])
   const [loading, setLoading] = useState(true)
@@ -10,10 +18,8 @@ export function useHabits() {
 
   const reload = useCallback(async () => {
     try {
-      setLoading(true)
-      const { data, error } = await supabase.from('habits').select('*').order('created_at', { ascending: true })
-      if (error) throw error
-      setHabits((data as Habit[]) ?? [])
+      const rows = await repo.listHabits()
+      setHabits(rows)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error cargando hábitos')
@@ -23,26 +29,35 @@ export function useHabits() {
   }, [])
 
   useEffect(() => {
-    reload()
+    void reload()
+    return onDataChanged((scope) => {
+      if (scope === 'habits') void reload()
+    })
   }, [reload])
 
   return { habits, loading, error, reload }
 }
 
+/**
+ * Ocurrencias de hoy. Genera los slots que falten (solo de hábitos activos)
+ * y expone `mark` con actualización optimista.
+ */
 export function useToday(habits: Habit[], loadingHabits: boolean) {
+  const { user } = useAuth()
   const [occurrences, setOccurrences] = useState<Occurrence[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const today = useRef(todayStr()).current
 
   const reload = useCallback(async () => {
-    if (loadingHabits || habits.length === 0) {
+    if (loadingHabits) return
+    if (!user) {
       setOccurrences([])
       setLoading(false)
       return
     }
     try {
-      setLoading(true)
-      const occs = await ensureTodayOccurrences(habits)
+      const occs = await repo.ensureOccurrences(habits, today, user.id)
       setOccurrences(occs)
       setError(null)
     } catch (e) {
@@ -50,18 +65,40 @@ export function useToday(habits: Habit[], loadingHabits: boolean) {
     } finally {
       setLoading(false)
     }
-  }, [habits, loadingHabits])
+  }, [habits, loadingHabits, today, user])
 
   useEffect(() => {
-    reload()
+    void reload()
   }, [reload])
 
+  useEffect(() => {
+    return onDataChanged((scope) => {
+      if (scope !== 'occurrences') return
+      // Releer sin regenerar: evita un bucle con ensureOccurrences
+      void repo.listOccurrencesForDate(today).then((rows) => {
+        setOccurrences(rows.sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time)))
+      })
+    })
+  }, [today])
+
   const mark = useCallback(
-    async (id: string, status: 'completed' | 'skipped' | 'pending') => {
-      await setOccurrenceStatus(id, status)
-      setOccurrences((prev) => prev.map((o) => (o.id === id ? { ...o, status, completed_at: status === 'completed' ? new Date().toISOString() : null } : o)))
+    async (id: string, status: OccurrenceStatus) => {
+      // Optimista: la UI responde antes de que IndexedDB confirme
+      setOccurrences((prev) =>
+        prev.map((o) =>
+          o.id === id
+            ? { ...o, status, completed_at: status === 'completed' ? new Date().toISOString() : null }
+            : o
+        )
+      )
+      try {
+        await repo.setOccurrenceStatus(id, status)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'No se pudo guardar')
+        await reload()
+      }
     },
-    []
+    [reload]
   )
 
   return { occurrences, loading, error, reload, mark }

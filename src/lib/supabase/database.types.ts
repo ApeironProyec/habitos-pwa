@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -18,9 +18,11 @@ export type Database = {
         Row: {
           completed_at: string | null
           created_at: string
+          deleted_at: string | null
           habit_id: string
           id: string
-          scheduled_at: string
+          scheduled_date: string
+          scheduled_time: string
           status: string
           updated_at: string
           user_id: string
@@ -28,9 +30,11 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           created_at?: string
+          deleted_at?: string | null
           habit_id: string
           id?: string
-          scheduled_at: string
+          scheduled_date: string
+          scheduled_time: string
           status?: string
           updated_at?: string
           user_id: string
@@ -38,9 +42,11 @@ export type Database = {
         Update: {
           completed_at?: string | null
           created_at?: string
+          deleted_at?: string | null
           habit_id?: string
           id?: string
-          scheduled_at?: string
+          scheduled_date?: string
+          scheduled_time?: string
           status?: string
           updated_at?: string
           user_id?: string
@@ -60,6 +66,7 @@ export type Database = {
           category: string | null
           color: string | null
           created_at: string
+          deleted_at: string | null
           description: string | null
           end_date: string | null
           frequency_config: Json
@@ -71,6 +78,7 @@ export type Database = {
           start_date: string
           target_type: string | null
           target_value: number | null
+          timezone: string
           unit: string | null
           updated_at: string
           user_id: string
@@ -79,6 +87,7 @@ export type Database = {
           category?: string | null
           color?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           end_date?: string | null
           frequency_config?: Json
@@ -90,6 +99,7 @@ export type Database = {
           start_date?: string
           target_type?: string | null
           target_value?: number | null
+          timezone?: string
           unit?: string | null
           updated_at?: string
           user_id: string
@@ -98,6 +108,7 @@ export type Database = {
           category?: string | null
           color?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           end_date?: string | null
           frequency_config?: Json
@@ -109,6 +120,7 @@ export type Database = {
           start_date?: string
           target_type?: string | null
           target_value?: number | null
+          timezone?: string
           unit?: string | null
           updated_at?: string
           user_id?: string
@@ -146,6 +158,7 @@ export type Database = {
         Row: {
           completed_at: string | null
           created_at: string
+          deleted_at: string | null
           description: string | null
           due_date: string | null
           due_time: string | null
@@ -161,6 +174,7 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           due_date?: string | null
           due_time?: string | null
@@ -176,6 +190,7 @@ export type Database = {
         Update: {
           completed_at?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           due_date?: string | null
           due_time?: string | null
@@ -195,7 +210,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_task_minutes: {
+        Args: { p_minutes: number; p_task_id: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never
