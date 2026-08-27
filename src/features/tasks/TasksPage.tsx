@@ -11,6 +11,8 @@ import {
   Flag,
 } from 'lucide-react'
 import { useTasks, useTaskLists } from './useTasks'
+import { parseQuickTitle } from '@/lib/tasks/parse'
+import { displayTime } from '@/lib/habits/frequency'
 import { Timer } from './Timer'
 import { useAuth } from '@/features/auth/useAuth'
 import { Modal } from '@/components/Modal'
@@ -34,6 +36,12 @@ const PRIO_STYLES: Record<TaskPriority, string> = {
   low: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
 }
 
+/** YYYY-MM-DD + N días, aritmética UTC pura. */
+function addDaysStr(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d) + days * 86_400_000).toISOString().slice(0, 10)
+}
+
 export default function TasksPage() {
   const { tasks, loading, error, create, remove, setStatus } = useTasks()
   const { lists } = useTaskLists()
@@ -41,7 +49,7 @@ export default function TasksPage() {
 
   // ---------- estado UI ----------
   const [newTitle, setNewTitle] = useState('')
-  /** Creación en una línea con prioridad por default; "Detallada" abre el modal completo. */
+  /** Modal detallado en modo creación. Si hay texto en la barra rápida, se pre-parsea. */
   const [quickModalOpen, setQuickModalOpen] = useState(false)
   const [editing, setEditing] = useState<Task | null>(null)
   const [activeTimer, setActiveTimer] = useState<{ taskId: string; minutes: number } | null>(null)
@@ -82,21 +90,38 @@ export default function TasksPage() {
   async function addQuick(e: React.FormEvent) {
     e.preventDefault()
     if (!newTitle.trim()) return
+    const parsed = parseQuickTitle(newTitle)
     await create({
-      title: newTitle.trim(),
+      title: parsed.title || newTitle.trim(),
       description: null,
       status: 'pending',
-      due_date: null,
-      due_time: null,
-      priority: 'medium',
-      tags: [],
-      list_id: listFilter && listFilter !== 'general' ? listFilter : null,
+      due_date: parsed.due_date,
+      due_time: parsed.due_time,
+      priority: parsed.priority ?? 'medium',
+      tags: parsed.tags,
+      // si hay filtro de lista activo y el título no lo tocó, hereda
+      list_id:
+        (listFilter && listFilter !== 'general' ? listFilter : null),
       reminder_date: null,
       reminder_time: null,
       estimated_minutes: null,
     })
     setNewTitle('')
   }
+
+  /** Preview en vivo de lo que el parser entiende mientras se escribe. */
+  const quickPreview = useMemo(() => {
+    if (!newTitle.trim()) return null
+    const p = parseQuickTitle(newTitle)
+    const bits: string[] = []
+    if (p.due_date) {
+      bits.push(p.due_date === today ? 'hoy' : p.due_date === addDaysStr(today, 1) ? 'mañana' : p.due_date.slice(5))
+      if (p.due_time) bits.push('a las ' + displayTime(p.due_time))
+    }
+    if (p.priority) bits.push(PRIORITY_LABEL[p.priority].toLowerCase())
+    for (const t of p.tags) bits.push('#' + t)
+    return { title: p.title || newTitle.trim(), summary: bits.join(' · ') }
+  }, [newTitle, today])
 
   const inputCls =
     'w-full rounded-xl border border-[var(--card-border)] bg-black/[0.03] px-3.5 py-2.5 text-[15px] text-[var(--text-primary)] outline-none t-fast focus:border-violet-500 focus:ring-2 focus:ring-violet-500/25 dark:bg-white/[0.06]'
@@ -127,24 +152,39 @@ export default function TasksPage() {
         </p>
       )}
 
-      {/* Creación rápida en línea */}
-      <form onSubmit={addQuick} className="fade-up flex gap-2">
-        <input
-          className={inputCls}
-          placeholder="Tarea rápida… (Enter)"
-          aria-label="Nueva tarea rápida"
-          value={newTitle}
-          onChange={(e) => setNewTitle(e.target.value)}
-        />
-        <button
-          type="submit"
-          disabled={!newTitle.trim()}
-          className="tap-strong shrink-0 rounded-xl bg-violet-700 px-4 py-2.5 text-white shadow disabled:opacity-40"
-          aria-label="Agregar tarea"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </form>
+      {/* Creación rápida en línea con título inteligente */}
+      <div className="space-y-1.5">
+        <form onSubmit={addQuick} className="fade-up flex gap-2">
+          <input
+            className={inputCls}
+            placeholder='Ej: Comer mañana:4pm !alta #comida'
+            aria-label="Nueva tarea rápida"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            autoComplete="off"
+          />
+          <button
+            type="submit"
+            disabled={!newTitle.trim()}
+            className="tap-strong shrink-0 rounded-xl bg-violet-700 px-4 py-2.5 text-white shadow disabled:opacity-40"
+            aria-label="Agregar tarea"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </form>
+        {quickPreview && (
+          <p className="fade-in px-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+            <span className="font-semibold text-violet-600 dark:text-violet-400">✨</span>{' '}
+            {quickPreview.title}
+            {quickPreview.summary && (
+              <>
+                {' — '}
+                <span className="font-medium">{quickPreview.summary}</span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
 
       {/* Modo de agrupación + filtros */}
       <div className="space-y-2">
@@ -288,8 +328,15 @@ export default function TasksPage() {
           lists={lists}
           knownTags={allTags}
           initialListId={listFilter && listFilter !== 'general' ? listFilter : undefined}
-          onClose={() => setQuickModalOpen(false)}
-          onSaved={() => setQuickModalOpen(false)}
+          seedText={newTitle.trim() || undefined}
+          onClose={() => {
+            setQuickModalOpen(false)
+            setNewTitle('')
+          }}
+          onSaved={() => {
+            setQuickModalOpen(false)
+            setNewTitle('')
+          }}
         />
       )}
     </div>
@@ -448,6 +495,7 @@ function TaskFormModal({
   lists,
   knownTags,
   initialListId,
+  seedText,
   onClose,
   onSaved,
 }: {
@@ -455,18 +503,26 @@ function TaskFormModal({
   lists: TaskList[]
   knownTags: string[]
   initialListId?: string
+  /** Título crudo escrito en la barra rápida; se pre-parsea para llenar campos. */
+  seedText?: string
   onClose: () => void
   onSaved: () => void
 }) {
   const { user } = useAuth()
-  const [title, setTitle] = useState(task?.title ?? '')
+
+  // Modo creación con texto heredado de la barra rápida: el parser llena lo que entiende
+  const seed = !task && seedText ? parseQuickTitle(seedText) : null
+
+  const [title, setTitle] = useState(task?.title ?? seed?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
-  const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'medium')
-  const [dueDate, setDueDate] = useState(task?.due_date ?? '')
-  const [dueTime, setDueTime] = useState(task?.due_time?.slice(0, 5) ?? '')
-  const [reminderDate, setReminderDate] = useState(task?.reminder_date ?? '')
-  const [reminderTime, setReminderTime] = useState(task?.reminder_time?.slice(0, 5) ?? '')
-  const [tagsInput, setTagsInput] = useState((task?.tags ?? []).join(', '))
+  const [priority, setPriority] = useState<TaskPriority>(
+    task?.priority ?? seed?.priority ?? 'medium'
+  )
+  const [dueDate, setDueDate] = useState(task?.due_date ?? seed?.due_date ?? '')
+  const [dueTime, setDueTime] = useState((task?.due_time ?? seed?.due_time)?.slice(0, 5) ?? '')
+  // El recordatorio ES la fecha/hora objetivo: un solo concepto (decisión Erick)
+  const tagsInputInit = task?.tags ?? seed?.tags ?? []
+  const [tagsInput, setTagsInput] = useState(tagsInputInit.join(', '))
   const [listId, setListId] = useState<string>(task?.list_id ?? initialListId ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -475,7 +531,7 @@ function TaskFormModal({
     e.preventDefault()
     if (!title.trim()) return setError('El título es obligatorio')
     if (!user) return setError('Sin sesión activa')
-    if (reminderDate && !/^\\d{4}-\\d{2}-\\d{2}$/.test(reminderDate)) return setError('Fecha de recordatorio inválida')
+
 
     setSaving(true)
     try {
@@ -488,8 +544,10 @@ function TaskFormModal({
         priority,
         tags: parseTags(tagsInput),
         list_id: listId || null,
-        reminder_date: reminderDate || null,
-        reminder_time: reminderTime ? `${reminderTime}:00` : null,
+        // Un solo concepto temporal: notificar cuando llega la fecha/hora objetivo.
+        // Los valores viejos se limpian al editar (migración mental de modelo).
+        reminder_date: dueDate || null,
+        reminder_time: dueTime ? `${dueTime}:00` : null,
         estimated_minutes: task?.estimated_minutes ?? null,
       }
 
@@ -573,17 +631,6 @@ function TaskFormModal({
           <div>
             <label className={labelCls} htmlFor="task-duetime">Hora (opcional)</label>
             <input id="task-duetime" type="time" className={inputCls} value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls} htmlFor="task-rend">Recordatorio</label>
-            <input id="task-rend" type="date" className={inputCls} value={reminderDate} onChange={(e) => setReminderDate(e.target.value)} />
-          </div>
-          <div>
-            <label className={labelCls} htmlFor="task-rent">Hora del recordatorio</label>
-            <input id="task-rent" type="time" className={inputCls} value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
           </div>
         </div>
 
